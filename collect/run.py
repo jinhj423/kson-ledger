@@ -21,7 +21,7 @@ import sec  # noqa: E402
 from common import load_json, now_kst, save_json  # noqa: E402
 
 DATA = os.environ.get("DATA_DIR", "data")
-KEEP_DAYS = {"kr": 130, "us": 70}
+KEEP_DAYS = {"kr": 130, "us": 95}
 
 
 LOG = []
@@ -101,12 +101,22 @@ def main():
         log(f"US: 중단 {type(e).__name__}: {e}")
     us.flush()
     prune_seen(us_state, KEEP_DAYS["us"])
+    cutoff = (dt.date.today() - dt.timedelta(days=KEEP_DAYS["us"])).isoformat()
+    us_state["issuers"] = {k: v for k, v in us_state.get("issuers", {}).items() if v[1] >= cutoff}
     save_json(os.path.join(DATA, "state", "us.json"), us_state)
+
+    # still backfilling? ask the workflow to run again right away
+    more = os.path.join(DATA, ".more")
+    if len(kr_state.get("pending", [])) > 100 or len(us_state.get("pending", [])) > 400:
+        open(more, "w").close()
+    elif os.path.exists(more):
+        os.remove(more)
 
     site = os.path.join(DATA, "site")
     for mk, store in (("kr", kr), ("us", us)):
         events = store.prune_and_load()
-        build.build_market(mk, events, site, now_kst().isoformat(timespec="minutes"))
+        build.build_market(mk, events, site, now_kst().isoformat(timespec="minutes"),
+                           us_state.get("issuers") if mk == "us" else None)
         log(f"{mk}: 화면 자료 {len(events)}건으로 만듦")
     save_json(os.path.join(site, "meta.json"), {"built": now_kst().isoformat(timespec="minutes")})
     log(f"끝 ({time.time() - t0:.0f}초)")

@@ -87,7 +87,9 @@ def test_form4():
     assert ev["role"] == "Chief Executive Officer"
     assert ev["buyQ"] == 10000 and ev["buyAmt"] == 245000 and ev["sellQ"] == 0
     assert ev["tdate"] == "2026-11-12"
-    assert parse_form4(FORM4.replace(">P<", ">M<")) is None
+    assert ev["trade"] and ev["codes"] == ["M", "P"]
+    other = parse_form4(FORM4.replace(">P<", ">F<"))
+    assert other["trade"] is False and other["co"] == "Halden Robotics Inc"
 
 
 def test_format():

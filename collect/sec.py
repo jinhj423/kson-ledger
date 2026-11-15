@@ -125,8 +125,12 @@ def parse_form4(txt):
         who += f" 외 {len(owners) - 1}명"
     buyQ = buyAmt = sellQ = sellAmt = 0.0
     tdates = []
-    for t in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
+    codes = set()
+    for t in root.findall("nonDerivativeTable/nonDerivativeTransaction") + root.findall("derivativeTable/derivativeTransaction"):
         code = (t.findtext("transactionCoding/transactionCode") or "").strip()
+        codes.add(code)
+        if t.tag == "derivativeTransaction":
+            continue
         sh = _f(t.findtext("transactionAmounts/transactionShares/value"))
         px = _f(t.findtext("transactionAmounts/transactionPricePerShare/value"))
         if code == "P":
@@ -140,8 +144,6 @@ def parse_form4(txt):
         d = (t.findtext("transactionDate/value") or "")[:10]
         if d:
             tdates.append(d)
-    if not (buyQ or sellQ):
-        return None
     tk = (iss.findtext("issuerTradingSymbol") or "").strip().upper()
     if tk in ("", "NONE", "N/A"):
         tk = ""
@@ -151,6 +153,7 @@ def parse_form4(txt):
         "who": who, "role": role,
         "buyQ": buyQ, "buyAmt": buyAmt, "sellQ": sellQ, "sellAmt": sellAmt,
         "tdate": min(tdates) if tdates else "",
+        "trade": bool(buyQ or sellQ), "codes": sorted(c for c in codes if c),
     }
 
 
@@ -163,6 +166,7 @@ def collect(state, store_event, budget_s, log):
     t0 = time.time()
     seen = state.setdefault("seen", {})
     pending = state.setdefault("pending", [])
+    issuers = state.setdefault("issuers", {})
     queued = {p["acc"] for p in pending}
     done_days = set(state.setdefault("days", []))
     today_et = dt.datetime.now(ET_TZ).date()
@@ -205,6 +209,13 @@ def collect(state, store_event, budget_s, log):
                 n += 1
                 if not info:
                     continue
+                # every issuer that filed a Form 4 becomes searchable, trades or not
+                key = re.sub(r"[^A-Za-z0-9.\-]", "-", info["tk"] or f"cik{info['cik']}")
+                last = issuers.get(key, ["", ""])[1]
+                issuers[key] = [info["co"], max(last, it["date"])]
+                if not info.pop("trade"):
+                    continue
+                info.pop("codes", None)
                 cik_dir = it["acc"].replace("-", "")
                 info.update({
                     "id": it["acc"], "mk": "us", "t": "trade", "date": it["date"],

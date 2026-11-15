@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 
+from aliases import US_KO
 from common import fmt_krw, fmt_shares, fmt_usd, iga, save_json
 
 DOW = "월화수목금토일"
@@ -108,7 +109,7 @@ def _key(ev):
     return re.sub(r"[^A-Za-z0-9.\-]", "-", k)
 
 
-def build_market(mk, events, out, updated=""):
+def build_market(mk, events, out, updated="", issuers=None):
     kr = mk == "kr"
     money = fmt_krw if kr else fmt_usd
     unit = 1e8 if kr else 1e6
@@ -218,7 +219,16 @@ def build_market(mk, events, out, updated=""):
             "people": len({e.get("who") for e in t90}), "count": len(evs),
             "events": [display(e) for e in evs[:200]],
         })
-        index.append([k, first.get("co", "")])
+        index.append([k, first.get("co", ""), US_KO.get(k, "") if not kr else ""])
+    # US issuers that filed Form 4s without open-market trades: searchable, with an explanatory page
+    for k, (co, last) in (issuers or {}).items():
+        if k in groups:
+            continue
+        save_json(os.path.join(cdir, f"{k}.json"), {
+            "key": k, "mk": mk, "co": co, "cls": k, "buy": money(0), "sell": money(0), "net": money(0),
+            "netV": 0, "people": 0, "count": 0, "events": [], "lastOther": last,
+        })
+        index.append([k, co, US_KO.get(k, "")])
     index.sort(key=lambda x: x[1])
     save_json(os.path.join(out, f"{mk}_index.json"), index)
     return site

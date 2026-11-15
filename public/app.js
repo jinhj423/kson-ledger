@@ -59,17 +59,17 @@
       if (idx) return idx;
       const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => []);
       const [kr, us] = await Promise.all([get('/data/kr_index.json'), get('/data/us_index.json')]);
-      idx = [...kr.map(([k, n]) => [k, n, `/c/${k}/`]), ...us.map(([k, n]) => [k, n, `/u/${k}/`])];
+      idx = [...kr.map(([k, n]) => [k, n, '', `/c/${k}/`]), ...us.map(([k, n, ko]) => [k, n, ko || '', `/u/${k}/`])];
       return idx;
     };
-    const norm = (s) => String(s).toLowerCase().replace(/\s+/g, '');
+    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
     const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
     input.addEventListener('focus', load, { once: true });
     input.addEventListener('input', async () => {
       const q = norm(input.value);
       if (!q) { list.hidden = true; return; }
-      const hits = (await load()).filter(([k, n]) => norm(k).includes(q) || norm(n).includes(q)).slice(0, 8);
-      list.innerHTML = hits.map(([k, n, href]) => `<li><a href="${esc(href)}"><span>${esc(n)}</span><small>${esc(k)}</small></a></li>`).join('');
+      const hits = (await load()).filter(([k, n, ko]) => norm(k).startsWith(q) || norm(n).includes(q) || norm(ko).includes(q)).slice(0, 8);
+      list.innerHTML = hits.map(([k, n, ko, href]) => `<li><a href="${esc(href)}"><span>${esc(ko ? `${n} (${ko.split(' ')[0]})` : n)}</span><small>${esc(k)}</small></a></li>`).join('');
       list.hidden = !hits.length;
     });
     input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 150));

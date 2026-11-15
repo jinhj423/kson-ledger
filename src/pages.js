@@ -133,6 +133,13 @@ export function rank(env, mk, s) {
 
 export function company(env, mk, c) {
   const path = mk === 'kr' ? `/c/${c.key}/` : `/u/${c.key}/`;
+  if (!c.events.length) {
+    const glow = `<section class="hero wrap"><p class="lead">${esc(c.cls)}, 최근 장내 매수·매도 없음</p><h1 class="co">${esc(c.co)}</h1></section>`;
+    const body = `<section class="card lg page"><h2>최근에는 내부자가 장내에서 사고판 보고가 없어요</h2>
+<p class="muted" style="margin-top:8px">이 회사 내부자는 최근(마지막 보고 ${esc(c.lastOther || '')}) Form 4를 냈지만, 주식 보상·옵션 행사·세금 납부·증여처럼 장내 매수(P)나 매도(S)가 아닌 보고였어요. ${SITE}는 장내 매수·매도만 금액에 넣어요.</p>
+<a class="more ghost" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=${encodeURIComponent(c.key)}&amp;type=4" rel="noopener" target="_blank">SEC에서 이 회사 Form 4 보기</a></section>`;
+    return layout(env, { title: `${c.co} 내부자 거래`, desc: `${c.co} 최근 내부자 장내 매수·매도 보고 없음.`, path, mk, body, glow });
+  }
   let last = '';
   const list = c.events.map((r) => {
     const head = r.date !== last ? `<h3 class="dh">${esc(r.dl)}</h3>` : '';
@@ -158,13 +165,13 @@ export function company(env, mk, c) {
 }
 
 export function search(env, q, kr, us) {
-  const norm = (x) => String(x).toLowerCase().replace(/\s+/g, '');
+  const norm = (x) => String(x || '').toLowerCase().replace(/\s+/g, '');
   const k = norm(q);
-  const hit = (list, base) => (k ? list.filter(([code, name]) => norm(code).includes(k) || norm(name).includes(k)).slice(0, 30).map(([code, name]) => `<a class="crow" href="${base}${encodeURIComponent(code)}/"><span class="nm">${esc(name)}</span><span class="sb">${esc(code)}</span></a>`).join('') : '');
+  const hit = (list, base) => (k ? list.filter(([code, name, ko]) => norm(code) === k || norm(code).startsWith(k) || norm(name).includes(k) || norm(ko).includes(k)).slice(0, 30).map(([code, name, ko]) => `<a class="crow" href="${base}${encodeURIComponent(code)}/"><span class="nm">${esc(ko ? `${name} (${ko.split(' ')[0]})` : name)}</span><span class="sb">${esc(code)}</span></a>`).join('') : '');
   const a = hit(kr || [], '/c/'), b = hit(us || [], '/u/');
   const body = `<section class="card lg page"><h1>"${esc(q)}" 검색 결과</h1>
 ${a ? `<h3 class="dh">한국</h3>${a}` : ''}${b ? `<h3 class="dh">미국</h3>${b}` : ''}
-${a || b ? '' : '<p class="empty">최근 공시가 있는 회사 중에서는 찾지 못했어요. 이름을 조금 짧게 입력해 보세요.</p>'}</section>`;
+${a || b ? '' : `<p class="empty">찾지 못했어요. ${SITE}에는 최근 공시가 올라온 회사만 있어요. 한국은 임원·주요주주 소유보고나 5% 보유 보고가, 미국은 Form 4가 최근에 한 번이라도 올라와야 검색돼요.</p>`}</section>`;
   return layout(env, { title: '검색', desc: '회사 검색', path: '/search/', body });
 }
 
