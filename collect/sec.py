@@ -8,8 +8,10 @@ Each filing is read once from its full-text .txt (the Form 4 XML is inside).
 import datetime as dt
 import os
 import re
+import threading
 import time
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 import xml.etree.ElementTree as ET
 
 from common import get
@@ -26,13 +28,15 @@ class Sec:
         self.calls = 0
         self.forbidden = 0
         self._last = 0.0
+        self._lock = threading.Lock()
 
     def get(self, url):
-        wait = 0.14 - (time.time() - self._last)
-        if wait > 0:
-            time.sleep(wait)
-        self._last = time.time()
-        self.calls += 1
+        with self._lock:  # stay under SEC's 10 requests/second across threads
+            wait = 0.14 - (time.time() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.time()
+            self.calls += 1
         try:
             return get(url, headers=self.h, tries=1)
         except urllib.error.HTTPError as e:
@@ -183,24 +187,29 @@ def collect(state, store_event, budget_s, log):
     state["days"] = sorted(done_days)[-40:]
 
     pending.sort(key=lambda p: (p["date"], p["acc"]), reverse=True)
-    n = kept = 0
-    while pending and time.time() - t0 < budget_s:
-        it = pending.pop(0)
+
+    def fetch(it):
         try:
             raw = sec.get(f"{BASE}/Archives/edgar/data/{it['cik']}/{it['acc']}.txt")
-            info = parse_form4(raw.decode("utf-8", "replace")) if raw else None
+            return it, (parse_form4(raw.decode("utf-8", "replace")) if raw else None)
         except Exception as e:  # skip broken filings
             log(f"US: {it['acc']} 실패: {e}")
-            info = None
-        seen[it["acc"]] = it["date"]
-        n += 1
-        if not info:
-            continue
-        cik_dir = it["acc"].replace("-", "")
-        info.update({
-            "id": it["acc"], "mk": "us", "t": "trade", "date": it["date"],
-            "url": f"{BASE}/Archives/edgar/data/{it['cik']}/{cik_dir}/{it['acc']}-index.htm",
-        })
-        store_event(info)
-        kept += 1
+            return it, None
+
+    n = kept = 0
+    with ThreadPoolExecutor(4) as pool:
+        while pending and time.time() - t0 < budget_s:
+            batch = [pending.pop(0) for _ in range(min(40, len(pending)))]
+            for it, info in pool.map(fetch, batch):
+                seen[it["acc"]] = it["date"]
+                n += 1
+                if not info:
+                    continue
+                cik_dir = it["acc"].replace("-", "")
+                info.update({
+                    "id": it["acc"], "mk": "us", "t": "trade", "date": it["date"],
+                    "url": f"{BASE}/Archives/edgar/data/{it['cik']}/{cik_dir}/{it['acc']}-index.htm",
+                })
+                store_event(info)
+                kept += 1
     log(f"US: 읽음 {n}건, 장내거래 {kept}건, 남은 대기 {len(pending)}건, 요청 {sec.calls}회, 403 {sec.forbidden}회")

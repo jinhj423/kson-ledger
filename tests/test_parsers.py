@@ -25,6 +25,15 @@ DART_DOC = """
 </TBODY></TABLE></TABLE-GROUP>
 """
 
+# Real DART layout: cells carry AUNIT/ACODE codes, reasons may have no (+)/(-).
+DART_CODED = """<TBODY>
+<TR ACOPY="Y"><TU AUNIT="RPT_RSN" AUNITVALUE="89">주식병합</TU><TU AUNIT="MDF_DM" AUNITVALUE="20261013">2026.10.13</TU><TU AUNIT="STR_KND" AUNITVALUE="1">보통주</TU>
+<TE ACODE="BFR_STK_CNT">5,749,229</TE><TE ACODE="MDF_STK_CNT">-4,599,384</TE><TE ACODE="AFR_STK_CNT">1,149,845</TE><TE ACODE="ACI_AMT2">-</TE><TE ACODE="RMK">-</TE><TU AUNIT="TRD_PLN_RD" AUNITVALUE="-">-</TU></TR>
+<TR ACOPY="Y"><TU AUNIT="RPT_RSN" AUNITVALUE="1">장내매수</TU><TU AUNIT="MDF_DM" AUNITVALUE="20261112">2026년 11월 12일</TU><TU AUNIT="STR_KND" AUNITVALUE="1">보통주</TU>
+<TE ACODE="BFR_STK_CNT">1,000</TE><TE ACODE="MDF_STK_CNT">3,000</TE><TE ACODE="AFR_STK_CNT">4,000</TE><TE ACODE="ACI_AMT2">12,500</TE><TE ACODE="RMK"></TE><TU AUNIT="TRD_PLN_RD" AUNITVALUE="-">-</TU></TR>
+<TR ACOPY="N"><TD COLSPAN="3">합 계</TD><TE>1</TE><TE>2</TE><TE>3</TE><TE>-</TE><TE>-</TE><TE>-</TE></TR>
+</TBODY>"""
+
 FORM4 = """<SEC-DOCUMENT>
 <DOCUMENT><TYPE>4<TEXT>
 <XML>
@@ -63,6 +72,13 @@ def test_dart():
     assert rows[0]["date"] == "20261112"
     assert [r["reason"] for r in rows if r["cat"] == "other"] == ["증여"]
     assert not rows[4]["stock"]
+
+
+def test_dart_coded():
+    rows = parse_trade_rows(DART_CODED)
+    assert [r["reason"] for r in rows] == ["주식병합", "장내매수"], rows
+    assert rows[0]["cat"] == "other" and rows[0]["date"] == "20261013"
+    assert rows[1]["cat"] == "buy" and rows[1]["qty"] == 3000 and rows[1]["price"] == 12500 and rows[1]["date"] == "20261112"
 
 
 def test_form4():

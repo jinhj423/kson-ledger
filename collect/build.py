@@ -75,10 +75,18 @@ def display(ev):
         row["dk"] = "buy" if kind == "buy" or (kind == "mixed" and net > 0) else (
             "sell" if kind in ("sell", "mixed") else "muted")
     elif t == "major":
-        who = ev.get("who", "")
-        row["sub"] = f"{who}{iga(who)} 지분 {ev.get('rate', 0):.2f}%를 보유하고 있다고 알렸어요"
-        row["amt"] = f"{ev.get('rate', 0):.2f}%"
-        row["d"] = "지분 5% 새로" if ev.get("new") else f"{ev.get('rateChg', 0):+.2f}%p".replace("-", "−")
+        who, rate, chg = ev.get("who", ""), ev.get("rate", 0), ev.get("rateChg", 0)
+        if ev.get("new"):
+            verb = f"지분 {rate:.2f}%를 새로 보유했다고 알렸어요"
+        elif chg > 0:
+            verb = f"지분을 {rate:.2f}%로 늘렸다고 알렸어요"
+        elif chg < 0:
+            verb = f"지분이 {rate:.2f}%로 줄었다고 알렸어요"
+        else:
+            verb = f"지분 {rate:.2f}% 보유 내용을 다시 알렸어요"
+        row["sub"] = f"{who}{iga(who)} {verb}"
+        row["amt"] = f"{rate:.2f}%"
+        row["d"] = "지분 5% 새로" if ev.get("new") else f"{chg:+.2f}%p".replace("-", "−")
         row["kind"], row["dk"] = "major", "muted"
     elif t == "buyback":
         amt = ev.get("amt", 0)

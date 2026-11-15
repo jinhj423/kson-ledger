@@ -103,8 +103,10 @@ def scan(d, ty, bgn, end, seen, max_pages):
 
 # ---------- 원문 파싱 ----------
 ROW = re.compile(r"<TR\b[^>]*>(.*?)</TR>", re.S | re.I)
-CELL = re.compile(r"<(TE|TD|TU|TH)\b[^>]*>(.*?)</\1>", re.S | re.I)
+CELL = re.compile(r"<(TE|TD|TU|TH)\b([^>]*)>(.*?)</\1>", re.S | re.I)
 SIGNED = re.compile(r"\((\+|-|－|＋)\)")
+CODE = re.compile(r'\b(?:AUNIT|ACODE)="([A-Z0-9_]+)"')
+AVAL = re.compile(r'\bAUNITVALUE="([^"]*)"')
 
 
 def _clean(s):
@@ -129,21 +131,38 @@ def unzip_text(raw):
 def parse_trade_rows(text):
     """Rows of the '세부변동내역' table.
 
-    Expected column order: 보고사유 | 변동일 | 특정증권등의 종류 | 변동 전 | 증감 | 변동 후 | 취득/처분 단가 | 비고
+    Cells are read by their DART codes (RPT_RSN 보고사유, MDF_DM 변동일, STR_KND 종류,
+    MDF_STK_CNT 증감, ACI_AMT2 단가). Older layouts without codes fall back to column order:
+    보고사유 | 변동일 | 종류 | 변동 전 | 증감 | 변동 후 | 단가 | 비고
     """
     out = []
     for row in ROW.findall(text):
-        cells = [_clean(c[1]) for c in CELL.findall(row)]
-        if len(cells) < 7:
+        raw = CELL.findall(row)
+        if len(raw) < 7:
             continue
-        reason = cells[0]
-        m = SIGNED.search(reason)
-        if not m:
+        by = {}
+        for _, attrs, body in raw:
+            m = CODE.search(attrs)
+            if m:
+                v = AVAL.search(attrs)
+                by[m.group(1)] = (_clean(body), v.group(1) if v else "")
+        if "RPT_RSN" in by and "MDF_STK_CNT" in by:
+            reason = by["RPT_RSN"][0]
+            date = by.get("MDF_DM", ("", ""))[1] or by.get("MDF_DM", ("", ""))[0]
+            kind = by.get("STR_KND", ("", ""))[0]
+            qty_s = by.get("MDF_STK_CNT", ("", ""))[0]
+            price_s = by.get("ACI_AMT2", ("", ""))[0]
+        else:
+            cells = [_clean(c[2]) for c in raw]
+            reason = cells[0]
+            if not SIGNED.search(reason):
+                continue
+            date, kind, qty_s, price_s = cells[1], cells[2], cells[4], cells[6]
+        if not reason or "합계" in reason.replace(" ", ""):
             continue
-        kind = cells[2]
         stock = "주" in kind and not any(k in kind for k in ("사채", "권", "증서"))
-        qty = abs(to_num(cells[4]))
-        price = abs(to_num(cells[6]))
+        qty = abs(to_num(qty_s))
+        price = abs(to_num(price_s))
         if "장내매수" in reason:
             cat = "buy"
         elif "장내매도" in reason:
@@ -152,7 +171,7 @@ def parse_trade_rows(text):
             cat = "other"
         out.append({
             "reason": SIGNED.sub("", reason).strip(),
-            "date": re.sub(r"\D", "", cells[1])[:8],
+            "date": re.sub(r"\D", "", date)[:8],
             "stock": stock,
             "qty": qty,
             "price": price,
@@ -213,7 +232,8 @@ def build_major(d, item, seen_at):
     ev["rate"] = to_num(r.get("stkrt"))
     ev["rateChg"] = to_num(r.get("stkrt_irds"))
     ev["reason"] = (r.get("report_resn") or "").strip()[:80]
-    ev["new"] = ("신규" in (r.get("report_tp") or "") + ev["reason"]) or abs(ev["rate"] - ev["rateChg"]) < 0.01
+    ev["new"] = ev["rate"] >= 5 and ("신규" in (r.get("report_tp") or "") + ev["reason"]
+                                     or abs(ev["rate"] - ev["rateChg"]) < 0.01)
     return ev
 
 

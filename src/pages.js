@@ -3,12 +3,14 @@ import { chart, dayLabel, esc, feedRow, layout, rankRows, SITE, xLabels } from '
 const MKNAME = { kr: '한국', us: '미국' };
 
 function bigNumber(mk, w) {
-  const v = Math.abs(w.net);
+  let v = Math.abs(w.net);
+  let unit = mk === 'us' ? 'M' : '억원';
+  if (mk === 'us' && v >= 1000) { v = Math.round(v / 100) / 10; unit = 'B'; }
+  if (mk === 'kr' && v >= 10000) { v = Math.round(v / 1000) / 10; unit = '조원'; }
   const dec = v >= 100 ? 0 : 1;
   const sign = w.net > 0 ? '+' : w.net < 0 ? '−' : '';
   const pre = sign + (mk === 'us' ? '$' : '');
   const shown = pre + v.toLocaleString('ko-KR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-  const unit = mk === 'us' ? 'M' : '억원';
   return `<p class="big"><span data-count="${v}" data-dec="${dec}" data-pre="${esc(pre)}">${esc(shown)}</span><span class="unit">${unit}</span></p>`;
 }
 
