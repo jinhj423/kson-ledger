@@ -88,11 +88,12 @@
     sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js';
     sc.async = true;
     sc.textContent = JSON.stringify({
-      symbols: [[n, `${s}|12M`]], chartOnly: false, autosize: true, locale: 'kr', colorTheme: 'dark',
+      symbols: [[n, `${s}|12M`]], chartOnly: false, autosize: true, width: '100%', height: '100%', locale: 'kr', colorTheme: 'dark',
       showVolume: false, showMA: true, maLength: 200, maLineColor: 'rgba(164,169,178,0.85)', maLineWidth: 1,
       hideDateRanges: false, hideMarketStatus: true, hideSymbolLogo: true, scalePosition: 'right', scaleMode: 'Normal',
       fontFamily: 'Inter, Noto Sans KR, sans-serif', fontSize: '11', noTimeScale: false, valuesTracking: '1',
-      changeMode: 'price-and-percent', chartType: 'line', lineWidth: 2, lineType: 0, lineColor: '#F3F4F6',
+      changeMode: 'price-and-percent', chartType: 'line', lineWidth: 2, lineType: 0,
+      color: '#F3F4F6', lineColor: '#F3F4F6', upColor: '#F3F4F6', downColor: '#F3F4F6',
       dateRanges: ['3m|1D', '12m|1D', '60m|1W'], backgroundColor: '#0F1115', gridLineColor: 'rgba(255,255,255,0)',
       fontColor: '#A4A9B2', widgetFontColor: '#F3F4F6',
     });

@@ -146,6 +146,13 @@ const usd = (v) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits
 function tvBlock(c) {
   if (!c.tv) return '';
   const page = `https://kr.tradingview.com/symbols/${encodeURIComponent(c.tv.replace(':', '-'))}/`;
+  if (c.tv.startsWith('KRX:')) {
+    // TradingView does not allow Korea Exchange symbols inside embedded widgets.
+    const code = c.tv.slice(4);
+    return `<div class="tvlink"><p>한국 종목 주가 차트는 다른 사이트에서 열려요.</p>
+<div><a class="more ghost" href="https://finance.naver.com/item/main.naver?code=${encodeURIComponent(code)}" rel="noopener nofollow" target="_blank">네이버 증권에서 주가 보기</a>
+<a class="more ghost" href="${page}" rel="noopener nofollow" target="_blank">TradingView에서 주가 보기</a></div></div>`;
+  }
   return `<div class="tvbox" data-tv="${esc(JSON.stringify({ s: c.tv, n: c.co }))}">
 <div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"><p class="muted">주가 차트를 불러오는 중이에요</p></div>
 <div class="tradingview-widget-copyright"><a href="${page}" rel="noopener nofollow" target="_blank">${esc(c.co)} 주가 차트</a> by TradingView, 지연 시세</div></div>
@@ -194,7 +201,7 @@ ${labels}${dots}
 <div class="hit"></div>
 </div>
 <div class="xl" aria-hidden="true"><span style="left:0">${dayLabel(pr.from)}</span><span style="left:50%;transform:translateX(-50%)">${dayLabel(mid)}</span><span style="right:0">${dayLabel(pr.to)}</span></div>
-<div class="lg"><span><i class="b"></i>장내매수</span><span><i class="s"></i>장내매도</span><span><i class="avg"></i>90일 평균 단가</span></div>
+<div class="legend"><span><i class="b"></i>장내매수</span><span><i class="s"></i>장내매도</span><span><i class="avg"></i>90일 평균 단가</span></div>
 <p class="note">보고서에 적힌 거래일과 단가예요. 점이 클수록 거래 금액이 커요. 점을 누르거나 마우스를 올리면 누가 얼마에 거래했는지 보여요.</p>`;
 }
 

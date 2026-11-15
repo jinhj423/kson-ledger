@@ -158,6 +158,11 @@ a.row:hover{background:rgba(255,255,255,.03)}
 .tvbox .tradingview-widget-container{height:100%;display:flex;flex-direction:column}
 .tvbox .tradingview-widget-container__widget{flex:1;min-height:0}
 .tvbox .tradingview-widget-container__widget>.muted{padding:20px 4px}
+.tvbox .tradingview-widget-container__widget iframe{width:100%!important;height:100%!important}
+.tvlink{padding:18px 20px;border-radius:18px;background:var(--glass);border:1px solid var(--line)}
+.tvlink p{margin:0;font-size:14px;color:var(--ink2)}
+.tvlink div{display:flex;flex-wrap:wrap;gap:8px}
+.tvlink .more{flex:1 1 200px;margin-top:12px;min-height:44px;font-size:14px}
 .tradingview-widget-copyright{padding:8px 4px 0;font-size:12px;color:var(--ink3)}
 .tradingview-widget-copyright a{color:var(--ink2);text-decoration:underline;text-underline-offset:3px}
 .dotc{position:relative;margin-top:14px;border-radius:14px;background:rgba(255,255,255,.02)}
@@ -173,11 +178,11 @@ a.row:hover{background:rgba(255,255,255,.03)}
 .dotc .tip small{display:block;color:#4E5560;font-size:12px;margin-top:2px}
 .dotc.on .tip{opacity:1}
 .dotc .hit{cursor:pointer}
-.lg{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px;font-size:13px;color:var(--ink2)}
-.lg span{display:flex;align-items:center;gap:7px}
-.lg i{display:block;width:10px;height:10px;border-radius:50%}
-.lg i.b{background:var(--up)}.lg i.s{background:var(--dn)}
-.lg i.avg{width:18px;height:0;border-radius:0;border-top:1.5px dashed var(--ink3)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px;font-size:13px;color:var(--ink2)}
+.legend span{display:flex;align-items:center;gap:7px}
+.legend i{display:block;width:10px;height:10px;border-radius:50%}
+.legend i.b{background:var(--up)}.legend i.s{background:var(--dn)}
+.legend i.avg{width:18px;height:0;border-radius:0;border-top:1.5px dashed var(--ink3)}
 
 /* popup sheet */
 .pop{width:min(760px,calc(100% - 32px));max-height:calc(100% - 48px);padding:0;border:1px solid var(--line);border-radius:28px;background:var(--card);color:var(--ink)}
