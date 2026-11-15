@@ -18,8 +18,8 @@
     requestAnimationFrame(step);
   });
 
-  // Chart: pointer shows the day under it.
-  document.querySelectorAll('.chart').forEach((box) => {
+  // Net-buy chart: pointer shows the day under it.
+  const initLine = (root) => root.querySelectorAll('.chart').forEach((box) => {
     const pts = JSON.parse(box.dataset.pts || '[]');
     if (!pts.length) return;
     const cur = box.querySelector('.cur');
@@ -41,6 +41,96 @@
     hit.addEventListener('pointerdown', (e) => show(e.clientX));
     hit.addEventListener('pointerleave', () => box.classList.remove('on'));
   });
+
+  // Reported-price dots: pointer picks the nearest dot.
+  const initDots = (root) => root.querySelectorAll('.dotc').forEach((box) => {
+    const pts = JSON.parse(box.dataset.pts || '[]');
+    if (!pts.length) return;
+    const tip = box.querySelector('.tip');
+    const hit = box.querySelector('.hit');
+    const dots = box.querySelectorAll('.pd');
+    const show = (e) => {
+      const r = hit.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      let best = 0;
+      let bd = Infinity;
+      pts.forEach((p, i) => {
+        const d = Math.hypot((p.x / 100) * r.width - x, p.y - y);
+        if (d < bd) { bd = d; best = i; }
+      });
+      const p = pts[best];
+      dots.forEach((d, i) => d.classList.toggle('hl', i === best));
+      tip.style.left = `${p.x}%`;
+      tip.style.top = `${p.y - p.r - 6}px`;
+      tip.querySelector('span').textContent = p.d;
+      tip.querySelector('b').textContent = p.t;
+      tip.querySelector('small').textContent = p.s;
+      tip.dataset.side = p.x > 75 ? 'l' : p.x < 25 ? 'r' : 'c';
+      box.classList.add('on');
+    };
+    hit.addEventListener('pointermove', show);
+    hit.addEventListener('pointerdown', show);
+    hit.addEventListener('pointerleave', () => {
+      box.classList.remove('on');
+      dots.forEach((d) => d.classList.remove('hl'));
+    });
+  });
+
+  // TradingView price line, loaded only where a chart box is on screen.
+  const initTV = (root) => root.querySelectorAll('[data-tv]').forEach((box) => {
+    if (box.dataset.done) return;
+    box.dataset.done = '1';
+    const { s, n } = JSON.parse(box.dataset.tv);
+    const wrap = box.querySelector('.tradingview-widget-container');
+    wrap.querySelector('.tradingview-widget-container__widget').textContent = '';
+    const sc = document.createElement('script');
+    sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js';
+    sc.async = true;
+    sc.textContent = JSON.stringify({
+      symbols: [[n, `${s}|12M`]], chartOnly: false, autosize: true, locale: 'kr', colorTheme: 'dark',
+      showVolume: false, showMA: true, maLength: 200, maLineColor: 'rgba(164,169,178,0.85)', maLineWidth: 1,
+      hideDateRanges: false, hideMarketStatus: true, hideSymbolLogo: true, scalePosition: 'right', scaleMode: 'Normal',
+      fontFamily: 'Inter, Noto Sans KR, sans-serif', fontSize: '11', noTimeScale: false, valuesTracking: '1',
+      changeMode: 'price-and-percent', chartType: 'line', lineWidth: 2, lineType: 0, lineColor: '#F3F4F6',
+      dateRanges: ['3m|1D', '12m|1D', '60m|1W'], backgroundColor: '#0F1115', gridLineColor: 'rgba(255,255,255,0)',
+      fontColor: '#A4A9B2', widgetFontColor: '#F3F4F6',
+    });
+    wrap.appendChild(sc);
+  });
+
+  const init = (root) => { initLine(root); initDots(root); initTV(root); };
+  init(document);
+
+  // Tapping a company row opens its chart in a sheet; the row stays a normal link without JS.
+  const dlg = document.createElement('dialog');
+  dlg.className = 'pop';
+  dlg.setAttribute('aria-labelledby', 'pop-t');
+  document.body.appendChild(dlg);
+  if (typeof dlg.showModal === 'function') {
+    document.addEventListener('click', async (e) => {
+      const a = e.target.closest('a[data-pop]');
+      if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const href = a.getAttribute('href');
+      e.preventDefault();
+      dlg.innerHTML = '<div class="pop-in"><p class="muted">불러오는 중이에요</p></div>';
+      if (!dlg.open) dlg.showModal();
+      try {
+        const r = await fetch(`/x${href}`);
+        if (!r.ok) throw new Error(String(r.status));
+        dlg.innerHTML = await r.text();
+        init(dlg);
+        const x = dlg.querySelector('[data-close]');
+        if (x) x.focus();
+      } catch {
+        location.href = href;
+      }
+    });
+    dlg.addEventListener('click', (e) => {
+      if (e.target === dlg || e.target.closest('[data-close]')) dlg.close();
+    });
+    dlg.addEventListener('close', () => { dlg.innerHTML = ''; });
+  }
 
   // Tabs (ranking 많이 산 / 많이 판).
   document.querySelectorAll('[data-tabs]').forEach((g) => {

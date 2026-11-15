@@ -36,7 +36,7 @@ function header(mk, active) {
 
 function footer(env) {
   const issues = env.REPO_URL ? `${env.REPO_URL}/issues` : '#';
-  return `<section class="wrap sources"><p>이 공개 자료만 씁니다</p><div><span>금융감독원 DART</span><span>미국 SEC EDGAR</span></div></section>
+  return `<section class="wrap sources"><p>공시는 이 공개 자료만 씁니다</p><div><span>금융감독원 DART</span><span>미국 SEC EDGAR</span><span>주가 차트 TradingView</span></div></section>
 <footer class="wrap foot">
 <p>${SITE}는 금융감독원 DART와 미국 SEC EDGAR에 공개된 공시를 정리해 보여주는 정보 서비스예요. 특정 종목을 사거나 팔라고 권하지 않으며, 투자 판단과 그 결과는 이용자 본인에게 있어요. 공시 원문과 다를 수 있으니 중요한 내용은 원문으로 확인해 주세요.</p>
 <nav aria-label="사이트 정보"><a href="/about/">소개</a><a href="/sources/">방법과 출처</a><a href="/privacy/">개인정보처리방침</a><a href="${esc(issues)}" rel="noopener">문의</a></nav>
@@ -80,13 +80,13 @@ export function feedRow(r) {
   const inner = `<span class="av" aria-hidden="true">${esc(r.i)}</span>
 <span class="rm"><span class="nm">${esc(r.co)}</span><span class="sb">${esc(r.sub)}${time}</span></span>
 <span class="ra"><span class="am">${esc(r.amt)}</span><span class="dv ${esc(r.dk)}">${esc(r.d)}</span></span>`;
-  return r.link ? `<a class="row" href="${esc(r.link)}">${inner}</a>` : `<div class="row">${inner}</div>`;
+  return r.link ? `<a class="row" href="${esc(r.link)}" data-pop>${inner}</a>` : `<div class="row">${inner}</div>`;
 }
 
 export function rankRows(rows, cls) {
   if (!rows.length) return '<p class="empty">아직 해당하는 회사가 없어요.</p>';
   return rows
-    .map((k) => `<a class="rrow" href="${esc(k.link)}"><span class="rn${k.n <= 3 ? ' top' : ''}">${k.n}</span><span class="av sm" aria-hidden="true">${esc(k.i)}</span><span class="rm"><span class="nm">${esc(k.co)}</span><span class="sb">${esc(k.sub)}</span></span><span class="rv ${cls}">${esc(k.v)}</span></a>`)
+    .map((k) => `<a class="rrow" href="${esc(k.link)}" data-pop><span class="rn${k.n <= 3 ? ' top' : ''}">${k.n}</span><span class="av sm" aria-hidden="true">${esc(k.i)}</span><span class="rm"><span class="nm">${esc(k.co)}</span><span class="sb">${esc(k.sub)}</span></span><span class="rv ${cls}">${esc(k.v)}</span></a>`)
     .join('');
 }
 
@@ -137,4 +137,67 @@ export function xLabels(series) {
       return `<span style="${al}">${esc(series[i].d.slice(0, 5))}</span>`;
     })
     .join('')}</div>`;
+}
+
+// ---------- company chart: TradingView price line (A) + reported trade prices (C) ----------
+const won = (v) => `${Math.round(v).toLocaleString('ko-KR')}원`;
+const usd = (v) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function tvBlock(c) {
+  if (!c.tv) return '';
+  const page = `https://kr.tradingview.com/symbols/${encodeURIComponent(c.tv.replace(':', '-'))}/`;
+  return `<div class="tvbox" data-tv="${esc(JSON.stringify({ s: c.tv, n: c.co }))}">
+<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"><p class="muted">주가 차트를 불러오는 중이에요</p></div>
+<div class="tradingview-widget-copyright"><a href="${page}" rel="noopener nofollow" target="_blank">${esc(c.co)} 주가 차트</a> by TradingView, 지연 시세</div></div>
+</div>`;
+}
+
+export function tradeDots(pr, mk) {
+  if (!pr || !pr.pts || !pr.pts.length) {
+    return '<p class="empty">최근 90일 동안 단가가 적힌 장내 거래 보고가 없어요.</p>';
+  }
+  const money = mk === 'kr' ? won : usd;
+  const H = 190;
+  const pad = 22;
+  const t0 = Date.parse(pr.from);
+  const t1 = Date.parse(pr.to) || t0 + 1;
+  const vals = [...pr.pts.map((p) => p.p), pr.avgBuy, pr.avgSell].filter((v) => v > 0);
+  let lo = Math.min(...vals);
+  let hi = Math.max(...vals);
+  const span = hi - lo || hi * 0.1 || 1;
+  lo -= span * 0.15;
+  hi += span * 0.15;
+  const X = (d) => Math.max(0, Math.min(100, ((Date.parse(d) - t0) / (t1 - t0)) * 100));
+  const Y = (v) => pad + ((hi - v) / (hi - lo)) * (H - pad * 2);
+  const big = Math.max(...pr.pts.map((p) => p.p * p.q), 1);
+  const f = (x) => x.toFixed(1);
+
+  const avgs = [['b', pr.avgBuy, '평균 매수'], ['s', pr.avgSell, '평균 매도']].filter(([, v]) => v > 0);
+  const yb = pr.avgBuy > 0 ? Y(pr.avgBuy) : -99;
+  const lines = avgs.map(([k, v]) => `<line class="avg ${k}" x1="0" x2="1000" y1="${f(Y(v))}" y2="${f(Y(v))}"/>`).join('');
+  const labels = avgs.map(([k, v, t]) => {
+    const y = Y(v);
+    const below = k === 's' && Math.abs(y - yb) < 24;
+    return `<span class="al ${k}" style="top:${f(below ? y + 6 : y - 22)}px">${t} ${esc(money(v))}</span>`;
+  }).join('');
+
+  const pts = pr.pts.map((p) => ({
+    x: +X(p.d).toFixed(2), y: +Y(p.p).toFixed(1), k: p.k, r: +(4.5 + 4 * Math.sqrt((p.p * p.q) / big)).toFixed(1),
+    d: dayLabel(p.d), t: `${p.k === 'b' ? '장내매수' : '장내매도'} ${money(p.p)}`, s: `${p.who ? `${p.who}, ` : ''}${p.q.toLocaleString('ko-KR')}주`,
+  }));
+  const dots = pts.map((p) => `<span class="pd ${p.k}" style="left:${p.x}%;top:${p.y}px;width:${p.r * 2}px;height:${p.r * 2}px;margin:-${p.r}px 0 0 -${p.r}px"></span>`).join('');
+  const mid = new Date((t0 + t1) / 2).toISOString().slice(0, 10);
+  return `<div class="dotc" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}" role="img" aria-label="최근 90일 내부자 보고 단가 ${pts.length}건">
+<svg viewBox="0 0 1000 ${H}" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>
+${labels}${dots}
+<div class="tip" aria-hidden="true"><span></span><b></b><small></small></div>
+<div class="hit"></div>
+</div>
+<div class="xl" aria-hidden="true"><span style="left:0">${dayLabel(pr.from)}</span><span style="left:50%;transform:translateX(-50%)">${dayLabel(mid)}</span><span style="right:0">${dayLabel(pr.to)}</span></div>
+<div class="lg"><span><i class="b"></i>장내매수</span><span><i class="s"></i>장내매도</span><span><i class="avg"></i>90일 평균 단가</span></div>
+<p class="note">보고서에 적힌 거래일과 단가예요. 점이 클수록 거래 금액이 커요. 점을 누르거나 마우스를 올리면 누가 얼마에 거래했는지 보여요.</p>`;
+}
+
+export function priceSection(c, mk) {
+  return `<div class="pchart">${tvBlock(c)}<h3 class="dh">내부자가 보고한 거래 단가, 최근 90일</h3>${tradeDots(c.price, mk)}</div>`;
 }

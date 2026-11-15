@@ -1,4 +1,4 @@
-import { company, feed, home, notFound, rank, search, textPage } from './pages.js';
+import { company, feed, home, notFound, pop, rank, search, textPage } from './pages.js';
 
 const HTML = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=60' };
 
@@ -32,14 +32,21 @@ export default {
     if (p.length > 1 && !p.endsWith('/') && !p.includes('.')) {
       return Response.redirect(`${url.origin}${p}/${url.search}`, 301);
     }
-    if (p === '/') return page(home(e, 'kr', await data(env, 'kr.json')));
-    if (p === '/us/') return page(home(e, 'us', await data(env, 'us.json')));
+    const pk = url.searchParams.get('p') === '2w' ? '2w' : '1m';
+    if (p === '/') return page(home(e, 'kr', await data(env, 'kr.json'), pk));
+    if (p === '/us/') return page(home(e, 'us', await data(env, 'us.json'), pk));
     if (p === '/feed/') return page(feed(e, 'kr', await data(env, 'kr.json'), url.searchParams.get('t')));
     if (p === '/us/feed/') return page(feed(e, 'us', await data(env, 'us.json'), url.searchParams.get('t')));
-    if (p === '/rank/') return page(rank(e, 'kr', await data(env, 'kr.json')));
-    if (p === '/us/rank/') return page(rank(e, 'us', await data(env, 'us.json')));
+    if (p === '/rank/') return page(rank(e, 'kr', await data(env, 'kr.json'), pk));
+    if (p === '/us/rank/') return page(rank(e, 'us', await data(env, 'us.json'), pk));
     if (p === '/about/' || p === '/sources/' || p === '/privacy/') return page(textPage(e, p.slice(1, -1)));
 
+    const x = p.match(/^\/x\/(c|u)\/([A-Za-z0-9.\-]{1,20})\/$/);
+    if (x) {
+      const c = await data(env, `${x[1]}/${x[2]}.json`);
+      if (!c) return new Response('', { status: 404 });
+      return new Response(pop(e, x[1] === 'c' ? 'kr' : 'us', c), { headers: { ...HTML, 'x-robots-tag': 'noindex' } });
+    }
     const m = p.match(/^\/(c|u)\/([A-Za-z0-9.\-]{1,20})\/$/);
     if (m) {
       const c = await data(env, `${m[1]}/${m[2]}.json`);
@@ -56,7 +63,7 @@ export default {
     }
     if (p === '/sitemap.xml') return sitemap(env, url.origin);
     if (p === '/robots.txt') {
-      return new Response(`User-agent: *\nAllow: /\nSitemap: ${url.origin}/sitemap.xml\n`, { headers: { 'content-type': 'text/plain' } });
+      return new Response(`User-agent: *\nAllow: /\nDisallow: /x/\nSitemap: ${url.origin}/sitemap.xml\n`, { headers: { 'content-type': 'text/plain' } });
     }
     return page(notFound(e), 404);
   },

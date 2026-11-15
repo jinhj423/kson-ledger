@@ -88,6 +88,7 @@ def test_form4():
     assert ev["buyQ"] == 10000 and ev["buyAmt"] == 245000 and ev["sellQ"] == 0
     assert ev["tdate"] == "2026-11-12"
     assert ev["trade"] and ev["codes"] == ["M", "P"]
+    assert ev["px"] == [["2026-11-12", "b", 10000.0, 24.5]]
     other = parse_form4(FORM4.replace(">P<", ">F<"))
     assert other["trade"] is False and other["co"] == "Halden Robotics Inc"
 
@@ -108,6 +109,36 @@ def test_display():
     assert row["sub"] == "대표이사 박O준이 장내에서 샀어요", row["sub"]
     assert row["amt"] == "78.0억" and row["d"] == "+0.42%p" and row["dk"] == "buy" and row["time"] == "18:02"
     assert row["link"] == "/c/000001/"
+
+
+def test_periods_and_prices():
+    import datetime as dt
+    import json
+    import tempfile
+    from build import build_market
+    days, d = [], dt.date(2026, 11, 13)
+    while len(days) < 45:
+        if d.weekday() < 5:
+            days.append(d.isoformat())
+        d -= dt.timedelta(days=1)
+    evs = [{"id": f"r{i}", "mk": "kr", "t": "trade", "date": day, "code": "000001", "co": "가람", "cls": "코스피",
+            "who": "박O준", "role": "대표이사", "buyQ": 100, "buyAmt": 100 * 1000, "sellQ": 0, "sellAmt": 0}
+           for i, day in enumerate(days)]
+    evs[0]["px"] = [["20261112", "b", 100, 1000], ["20261113", "b", 300, 2000]]
+    out = tempfile.mkdtemp()
+    site = build_market("kr", evs, out, "2026-11-13T18:00")
+    one, two = site["p"]["1m"]["w"], site["p"]["2w"]["w"]
+    assert one["n"] == 20 and two["n"] == 10 and one["hasPrev"] and site["w"] == one
+    assert one["from"] == days[19] and two["from"] == days[9]
+    # a filing still waiting inside the earlier month: no comparison yet
+    site = build_market("kr", evs, out, "2026-11-13T18:00", complete_after=days[25])
+    assert not site["p"]["1m"]["w"]["hasPrev"] and site["p"]["2w"]["w"]["hasPrev"]
+    c = json.load(open(os.path.join(out, "c", "000001.json"), encoding="utf-8"))
+    assert c["tv"] == "KRX:000001"
+    pr = c["price"]
+    first = [x for x in pr["pts"] if x["d"] == "2026-11-13"][0]
+    assert first["p"] == 1750 and first["q"] == 400  # (100*1000 + 300*2000) / 400, latest row date
+    assert pr["from"] == "2026-08-15" and pr["avgSell"] == 0
 
 
 if __name__ == "__main__":

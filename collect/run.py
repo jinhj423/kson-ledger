@@ -112,11 +112,16 @@ def main():
     elif os.path.exists(more):
         os.remove(more)
 
+    # filings are worked newest-first, so days after the newest still-waiting filing are complete
+    kr_wait = [f"{p['rcept_dt'][:4]}-{p['rcept_dt'][4:6]}-{p['rcept_dt'][6:8]}" for p in kr_state.get("pending", [])]
+    us_wait = [p["date"] for p in us_state.get("pending", [])]
+    complete = {"kr": max(kr_wait, default=""), "us": max(us_wait, default="")}
+
     site = os.path.join(DATA, "site")
     for mk, store in (("kr", kr), ("us", us)):
         events = store.prune_and_load()
         build.build_market(mk, events, site, now_kst().isoformat(timespec="minutes"),
-                           us_state.get("issuers") if mk == "us" else None)
+                           us_state.get("issuers") if mk == "us" else None, complete[mk])
         log(f"{mk}: 화면 자료 {len(events)}건으로 만듦")
     save_json(os.path.join(site, "meta.json"), {"built": now_kst().isoformat(timespec="minutes")})
     log(f"끝 ({time.time() - t0:.0f}초)")

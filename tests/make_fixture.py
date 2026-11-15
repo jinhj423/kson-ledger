@@ -29,7 +29,7 @@ def weekdays(n):
 
 def main():
     kr, us, i = [], [], 0
-    for day in weekdays(30):
+    for day in weekdays(45):
         for _ in range(random.randint(6, 14)):
             i += 1
             code, co, cls = random.choice(KR)

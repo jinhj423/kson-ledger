@@ -125,6 +125,7 @@ def parse_form4(txt):
         who += f" 외 {len(owners) - 1}명"
     buyQ = buyAmt = sellQ = sellAmt = 0.0
     tdates = []
+    pxs = []
     codes = set()
     for t in root.findall("nonDerivativeTable/nonDerivativeTransaction") + root.findall("derivativeTable/derivativeTransaction"):
         code = (t.findtext("transactionCoding/transactionCode") or "").strip()
@@ -144,6 +145,8 @@ def parse_form4(txt):
         d = (t.findtext("transactionDate/value") or "")[:10]
         if d:
             tdates.append(d)
+            if sh and px:
+                pxs.append([d, "b" if code == "P" else "s", sh, px])
     tk = (iss.findtext("issuerTradingSymbol") or "").strip().upper()
     if tk in ("", "NONE", "N/A"):
         tk = ""
@@ -152,7 +155,7 @@ def parse_form4(txt):
         "cik": (iss.findtext("issuerCik") or "").strip().lstrip("0"),
         "who": who, "role": role,
         "buyQ": buyQ, "buyAmt": buyAmt, "sellQ": sellQ, "sellAmt": sellAmt,
-        "tdate": min(tdates) if tdates else "",
+        "tdate": min(tdates) if tdates else "", "px": pxs,
         "trade": bool(buyQ or sellQ), "codes": sorted(c for c in codes if c),
     }
 
@@ -178,7 +181,7 @@ def collect(state, store_event, budget_s, log):
                 queued.add(it["acc"])
 
     add(current_feed(sec, 6))
-    for back in range(1, 29):
+    for back in range(1, 63):
         day = today_et - dt.timedelta(days=back)
         if day.weekday() >= 5 or day.isoformat() in done_days:
             continue
@@ -188,7 +191,7 @@ def collect(state, store_event, budget_s, log):
             done_days.add(day.isoformat())
         if time.time() - t0 > budget_s / 4:
             break
-    state["days"] = sorted(done_days)[-40:]
+    state["days"] = sorted(done_days)[-70:]
 
     pending.sort(key=lambda p: (p["date"], p["acc"]), reverse=True)
 

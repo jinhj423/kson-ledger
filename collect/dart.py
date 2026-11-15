@@ -20,6 +20,7 @@ from common import get, now_kst, to_num
 
 API = "https://opendart.fss.or.kr/api/"
 LISTED = {"Y": "코스피", "K": "코스닥"}
+DEPTH = 62  # days of history to hold (two '1달' windows of 20 trading days)
 
 
 class RateLimited(Exception):
@@ -220,6 +221,9 @@ def build_trade(d, item, seen_at, debug):
     ev["buyAmt"] = sum(r["qty"] * r["price"] for r in b)
     ev["sellQ"] = sum(r["qty"] for r in s)
     ev["sellAmt"] = sum(r["qty"] * r["price"] for r in s)
+    # per-row trade date and unit price, for the company price chart
+    ev["px"] = [[r["date"] if len(r["date"]) == 8 else ev["date"], r["cat"][0], r["qty"], r["price"]]
+                for r in b + s if r["qty"] and r["price"]]
     ev["other"] = sorted({r["reason"] for r in rows if r["cat"] == "other"})
     ev["parsed"] = bool(rows)
     return ev
@@ -281,6 +285,22 @@ def collect(state, store_event, budget_s, log):
                 elif not k:
                     seen[r["rcept_no"]] = r.get("rcept_dt", "")
         state["backfilled"] = True
+
+        # reach further back once (older segment only), so '1달' can be compared with the month before
+        depth = state.get("depth", 30)
+        if depth < DEPTH:
+            end = ymd(today - dt.timedelta(days=depth))
+            for ty, pages in (("D", 200), ("B", 60)):
+                for r in scan(d, ty, ymd(today - dt.timedelta(days=DEPTH)), end, set(seen) | in_pending, pages):
+                    k = kind_of(r)
+                    if k and r["rcept_no"] not in in_pending:
+                        r["_k"] = k
+                        pending.append(r)
+                        in_pending.add(r["rcept_no"])
+                    elif not k:
+                        seen[r["rcept_no"]] = r.get("rcept_dt", "")
+            state["depth"] = DEPTH
+            log(f"KR: {DEPTH}일 전까지 목록을 더 받음, 대기 {len(pending)}건")
 
         pending.sort(key=lambda r: r["rcept_no"], reverse=True)
         done = 0

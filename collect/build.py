@@ -109,14 +109,56 @@ def _key(ev):
     return re.sub(r"[^A-Za-z0-9.\-]", "-", k)
 
 
-def build_market(mk, events, out, updated="", issuers=None):
+PERIODS = (("1m", 20, "1달"), ("2w", 10, "2주"))  # first one is the default view
+PRICE_DAYS = 90
+
+
+def _trade_points(ev):
+    """(trade date, 'b'|'s', qty, price) rows of one report; older events fall back to report averages."""
+    px = ev.get("px")
+    if px:
+        return [(d, k, q, p) for d, k, q, p in px if q and p]
+    d = ev.get("tdate") or ev["date"]
+    out = []
+    if ev.get("buyQ") and ev.get("buyAmt"):
+        out.append((d, "b", ev["buyQ"], ev["buyAmt"] / ev["buyQ"]))
+    if ev.get("sellQ") and ev.get("sellAmt"):
+        out.append((d, "s", ev["sellQ"], ev["sellAmt"] / ev["sellQ"]))
+    return out
+
+
+def price_block(evs, kr, end):
+    """Reported trade prices for the company chart: one point per report and side, plus weighted averages."""
+    start = (dt.date.fromisoformat(end) - dt.timedelta(days=PRICE_DAYS)).isoformat()
+    pts, tot = [], {"b": [0.0, 0.0], "s": [0.0, 0.0]}
+    for e in evs:
+        if e["t"] != "trade":
+            continue
+        sides = collections.defaultdict(lambda: [0.0, 0.0, ""])
+        for d, k, q, p in _trade_points(e):
+            d = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) == 8 and "-" not in d else d[:10]
+            if not (start <= d <= end):
+                continue
+            s = sides[k]
+            s[0] += q
+            s[1] += q * p
+            s[2] = max(s[2], d)
+            tot[k][0] += q
+            tot[k][1] += q * p
+        for k, (q, a, d) in sides.items():
+            pts.append({"d": d, "k": k, "p": round(a / q, 2 if not kr else 0), "q": round(q),
+                        "who": _who(e)})
+    pts.sort(key=lambda x: x["d"])
+    avg = {k: (round(a / q, 2 if not kr else 0) if q else 0) for k, (q, a) in tot.items()}
+    return {"from": start, "to": end, "pts": pts[-300:], "avgBuy": avg["b"], "avgSell": avg["s"]}
+
+
+def build_market(mk, events, out, updated="", issuers=None, complete_after=""):
     kr = mk == "kr"
     money = fmt_krw if kr else fmt_usd
     unit = 1e8 if kr else 1e6
     trades = [e for e in events if e["t"] == "trade"]
     dates = sorted({e["date"] for e in events if dt.date.fromisoformat(e["date"]).weekday() < 5})
-    last20 = dates[-20:]
-    last5, prev5 = last20[-5:], last20[-10:-5]
 
     def agg(ds):
         ds = set(ds)
@@ -127,18 +169,33 @@ def build_market(mk, events, out, updated="", issuers=None):
             "net": sum(e.get("buyAmt", 0) - e.get("sellAmt", 0) for e in xs),
         }
 
-    cur, prev = agg(last5), agg(prev5)
+    periods = {pk: window(pk, n, label, dates, trades, events, agg, kr, money, unit, complete_after)
+               for pk, n, label in PERIODS}
 
+    recent = sorted(events, key=lambda e: (e["date"], e.get("seen", ""), e["id"]), reverse=True)
+    feed = [display(e) for e in recent[:150]]
+    site = {"mk": mk, "updated": updated or max((e.get("seen") or e["date"] for e in events), default=""),
+            "feed": feed, "p": periods, **periods[PERIODS[0][0]]}
+    save_json(os.path.join(out, f"{mk}.json"), site)
+    write_companies(mk, recent, dates, out, issuers, kr, money, unit, updated)
+    return site
+
+
+def window(pk, n, label, dates, trades, events, agg, kr, money, unit, complete_after):
+    """Totals, daily series, rankings and clusters for the last n report days."""
+    last, prevd = dates[-n:], dates[-2 * n:-n]
+    cur, prev = agg(last), agg(prevd)
     series = []
-    for d in last20:
+    for d in last:
         a = agg([d])
         series.append({"d": _dlabel(d), "buyN": a["buyN"], "sellN": a["sellN"],
                        "v": round(a["net"] / unit, 1), "txt": money(a["net"], sign=True)})
+    last_set = set(last)
 
-    # rankings (last 5 trading days, net amount by company)
+    # rankings: net amount by company in the window
     by_co = collections.defaultdict(lambda: {"net": 0.0, "co": "", "cls": "", "n": 0})
     for e in trades:
-        if e["date"] in set(last5):
+        if e["date"] in last_set:
             k = _key(e)
             if not k:
                 continue
@@ -155,15 +212,15 @@ def build_market(mk, events, out, updated="", issuers=None):
     pos = sorted(((k, v) for k, v in by_co.items() if v["net"] > 0), key=lambda kv: -kv[1]["net"])[:30]
     neg = sorted(((k, v) for k, v in by_co.items() if v["net"] < 0), key=lambda kv: kv[1]["net"])[:30]
 
-    # clusters: 3+ different reporters buying the same company in the last 5 trading days
+    # clusters: 3+ different reporters buying the same company in the window
     people = collections.defaultdict(dict)
     meta = {}
     for e in trades:
-        if e["date"] in set(last5) and e.get("buyQ") and _key(e):
+        if e["date"] in last_set and e.get("buyQ") and _key(e):
             k = _key(e)
             p = people[k].setdefault(e.get("who", ""), {"who": e.get("who", ""), "role": e.get("role", ""),
-                                                        "days": [False] * len(last5), "amt": 0.0})
-            p["days"][last5.index(e["date"])] = True
+                                                        "amt": 0.0, "days": set()})
+            p["days"].add(e["date"])
             p["amt"] += e.get("buyAmt", 0)
             meta[k] = e.get("co", "")
     clusters = []
@@ -172,33 +229,32 @@ def build_market(mk, events, out, updated="", issuers=None):
             amt = sum(p["amt"] for p in ps.values())
             clusters.append({
                 "co": meta[k], "link": (f"/c/{k}/" if kr else f"/u/{k}/"), "n": len(ps), "amt": money(amt),
-                "_a": amt, "people": [{"who": p["who"], "role": p["role"], "days": p["days"]}
+                "_a": amt, "people": [{"who": p["who"], "role": p["role"]}
                                       for p in sorted(ps.values(), key=lambda p: -p["amt"])][:6],
-                "dayCounts": [sum(1 for p in ps.values() if p["days"][i]) for i in range(len(last5))],
+                "dayCounts": [sum(1 for p in ps.values() if d in p["days"]) for d in last],
             })
     clusters.sort(key=lambda c: -c["_a"])
     for c in clusters:
         c.pop("_a")
 
-    recent = sorted(events, key=lambda e: (e["date"], e.get("seen", ""), e["id"]), reverse=True)
-    feed = [display(e) for e in recent[:150]]
-    last5_set = set(last5)
+    full = len(prevd) == n and (not complete_after or prevd[0] > complete_after)
     w = {
-        "from": last5[0] if last5 else "", "to": last5[-1] if last5 else "",
-        "days": [_dlabel(d)[:5] for d in last5], "dows": [DOW[dt.date.fromisoformat(d).weekday()] for d in last5],
+        "key": pk, "n": n, "label": label,
+        "from": last[0] if last else "", "to": last[-1] if last else "",
+        "days": [_dlabel(d)[:5] for d in last], "dows": [DOW[dt.date.fromisoformat(d).weekday()] for d in last],
         "buyN": cur["buyN"], "sellN": cur["sellN"], "prevBuyN": prev["buyN"], "prevSellN": prev["sellN"],
         "net": round(cur["net"] / unit, 1), "netTxt": money(cur["net"], sign=True),
-        "diffTxt": money(cur["net"] - prev["net"]), "diffUp": cur["net"] >= prev["net"], "hasPrev": len(prev5) == 5,
+        "diffTxt": money(cur["net"] - prev["net"]), "diffUp": cur["net"] >= prev["net"], "hasPrev": full,
         "clusterN": len(clusters),
-        "majorN": sum(1 for e in events if e["t"] == "major" and e.get("new") and e["date"] in last5_set),
-        "buybackN": sum(1 for e in events if e["t"] == "buyback" and e["date"] in last5_set),
+        "majorN": sum(1 for e in events if e["t"] == "major" and e.get("new") and e["date"] in last_set),
+        "buybackN": sum(1 for e in events if e["t"] == "buyback" and e["date"] in last_set),
     }
-    site = {"mk": mk, "updated": updated or max((e.get("seen") or e["date"] for e in events), default=""),
-            "w": w, "series": series, "feed": feed,
-            "rankBuy": rank_rows(pos), "rankSell": rank_rows(neg), "clusters": clusters[:12]}
-    save_json(os.path.join(out, f"{mk}.json"), site)
+    return {"w": w, "series": series, "rankBuy": rank_rows(pos), "rankSell": rank_rows(neg),
+            "clusters": clusters[:12]}
 
-    # company files + search index
+
+def write_companies(mk, recent, dates, out, issuers, kr, money, unit, updated):
+    """One file per company (records + reported trade prices) and the search index."""
     cdir = os.path.join(out, "c" if kr else "u")
     shutil.rmtree(cdir, ignore_errors=True)
     groups = collections.defaultdict(list)
@@ -208,15 +264,19 @@ def build_market(mk, events, out, updated="", issuers=None):
             groups[k].append(e)
     index = []
     cutoff = (dt.date.fromisoformat(dates[-1]) - dt.timedelta(days=90)).isoformat() if dates else ""
+    end = (updated or (dates[-1] if dates else dt.date.today().isoformat()))[:10]
     for k, evs in groups.items():
         t90 = [e for e in evs if e["t"] == "trade" and e["date"] >= cutoff]
         b = sum(e.get("buyAmt", 0) for e in t90)
         s = sum(e.get("sellAmt", 0) for e in t90)
         first = evs[0]
+        tk = first.get("tk", "")
         save_json(os.path.join(cdir, f"{k}.json"), {
-            "key": k, "mk": mk, "co": first.get("co", ""), "cls": first.get("cls", "") if kr else first.get("tk", ""),
+            "key": k, "mk": mk, "co": first.get("co", ""), "cls": first.get("cls", "") if kr else tk,
+            "tv": f"KRX:{k}" if kr else tk,
             "buy": money(b), "sell": money(s), "net": money(b - s, sign=True), "netV": round((b - s) / unit, 1),
             "people": len({e.get("who") for e in t90}), "count": len(evs),
+            "price": price_block(evs, kr, end),
             "events": [display(e) for e in evs[:200]],
         })
         index.append([k, first.get("co", ""), US_KO.get(k, "") if not kr else ""])
@@ -225,10 +285,10 @@ def build_market(mk, events, out, updated="", issuers=None):
         if k in groups:
             continue
         save_json(os.path.join(cdir, f"{k}.json"), {
-            "key": k, "mk": mk, "co": co, "cls": k, "buy": money(0), "sell": money(0), "net": money(0),
+            "key": k, "mk": mk, "co": co, "cls": k, "tv": "" if k.startswith("cik") else k,
+            "buy": money(0), "sell": money(0), "net": money(0),
             "netV": 0, "people": 0, "count": 0, "events": [], "lastOther": last,
         })
         index.append([k, co, US_KO.get(k, "")])
     index.sort(key=lambda x: x[1])
     save_json(os.path.join(out, f"{mk}_index.json"), index)
-    return site
