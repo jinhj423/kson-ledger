@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["collect/**", ".github/workflows/collect.yml"]
 
 concurrency:
   group: collect

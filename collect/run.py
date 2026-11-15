@@ -24,8 +24,13 @@ DATA = os.environ.get("DATA_DIR", "data")
 KEEP_DAYS = {"kr": 130, "us": 70}
 
 
+LOG = []
+
+
 def log(msg):
-    print(f"[{now_kst():%H:%M:%S}] {msg}", flush=True)
+    line = f"[{now_kst():%m-%d %H:%M:%S}] {msg}"
+    LOG.append(line)
+    print(line, flush=True)
 
 
 class Store:
@@ -98,6 +103,10 @@ def main():
         log(f"{mk}: 화면 자료 {len(events)}건으로 만듦")
     save_json(os.path.join(site, "meta.json"), {"built": now_kst().isoformat(timespec="minutes")})
     log(f"끝 ({time.time() - t0:.0f}초)")
+    path = os.path.join(DATA, "runs.log")
+    old = open(path, encoding="utf-8").read().splitlines() if os.path.exists(path) else []
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join((old + LOG)[-400:]) + "\n")
 
 
 if __name__ == "__main__":
