@@ -77,14 +77,13 @@ def display(ev):
     elif t == "major":
         who, rate, chg = ev.get("who", ""), ev.get("rate", 0), ev.get("rateChg", 0)
         if ev.get("new"):
-            verb = f"지분 {rate:.2f}%를 새로 보유했다고 알렸어요"
+            row["sub"] = f"{who}{iga(who)} 지분 {rate:.2f}%를 새로 보유했어요"
         elif chg > 0:
-            verb = f"지분을 {rate:.2f}%로 늘렸다고 알렸어요"
+            row["sub"] = f"{who}{iga(who)} 지분을 {rate:.2f}%로 늘렸어요"
         elif chg < 0:
-            verb = f"지분이 {rate:.2f}%로 줄었다고 알렸어요"
+            row["sub"] = f"{who}의 지분이 {rate:.2f}%로 줄었어요"
         else:
-            verb = f"지분 {rate:.2f}% 보유 내용을 다시 알렸어요"
-        row["sub"] = f"{who}{iga(who)} {verb}"
+            row["sub"] = f"{who}{iga(who)} 지분 {rate:.2f}% 보유를 다시 보고했어요"
         row["amt"] = f"{rate:.2f}%"
         row["d"] = "지분 5% 새로" if ev.get("new") else f"{chg:+.2f}%p".replace("-", "−")
         row["kind"], row["dk"] = "major", "muted"
@@ -109,7 +108,7 @@ def _key(ev):
     return re.sub(r"[^A-Za-z0-9.\-]", "-", k)
 
 
-def build_market(mk, events, out):
+def build_market(mk, events, out, updated=""):
     kr = mk == "kr"
     money = fmt_krw if kr else fmt_usd
     unit = 1e8 if kr else 1e6
@@ -176,7 +175,7 @@ def build_market(mk, events, out):
                                       for p in sorted(ps.values(), key=lambda p: -p["amt"])][:6],
                 "dayCounts": [sum(1 for p in ps.values() if p["days"][i]) for i in range(len(last5))],
             })
-    clusters.sort(key=lambda c: (-c["n"], -c["_a"]))
+    clusters.sort(key=lambda c: -c["_a"])
     for c in clusters:
         c.pop("_a")
 
@@ -188,12 +187,12 @@ def build_market(mk, events, out):
         "days": [_dlabel(d)[:5] for d in last5], "dows": [DOW[dt.date.fromisoformat(d).weekday()] for d in last5],
         "buyN": cur["buyN"], "sellN": cur["sellN"], "prevBuyN": prev["buyN"], "prevSellN": prev["sellN"],
         "net": round(cur["net"] / unit, 1), "netTxt": money(cur["net"], sign=True),
-        "diffTxt": money(cur["net"] - prev["net"]), "diffUp": cur["net"] >= prev["net"], "hasPrev": bool(prev5),
+        "diffTxt": money(cur["net"] - prev["net"]), "diffUp": cur["net"] >= prev["net"], "hasPrev": len(prev5) == 5,
         "clusterN": len(clusters),
         "majorN": sum(1 for e in events if e["t"] == "major" and e.get("new") and e["date"] in last5_set),
         "buybackN": sum(1 for e in events if e["t"] == "buyback" and e["date"] in last5_set),
     }
-    site = {"mk": mk, "updated": max((e.get("seen") or e["date"] for e in events), default=""),
+    site = {"mk": mk, "updated": updated or max((e.get("seen") or e["date"] for e in events), default=""),
             "w": w, "series": series, "feed": feed,
             "rankBuy": rank_rows(pos), "rankSell": rank_rows(neg), "clusters": clusters[:12]}
     save_json(os.path.join(out, f"{mk}.json"), site)

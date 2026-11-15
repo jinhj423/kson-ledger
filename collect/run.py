@@ -106,7 +106,7 @@ def main():
     site = os.path.join(DATA, "site")
     for mk, store in (("kr", kr), ("us", us)):
         events = store.prune_and_load()
-        build.build_market(mk, events, site)
+        build.build_market(mk, events, site, now_kst().isoformat(timespec="minutes"))
         log(f"{mk}: 화면 자료 {len(events)}건으로 만듦")
     save_json(os.path.join(site, "meta.json"), {"built": now_kst().isoformat(timespec="minutes")})
     log(f"끝 ({time.time() - t0:.0f}초)")

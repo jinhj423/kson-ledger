@@ -48,15 +48,16 @@ ${xLabels(s.series)}
 <div class="faces" aria-hidden="true">${c.people.slice(0, 5).map((p) => `<span>${esc((p.who || '?').charAt(0))}</span>`).join('')}</div>
 <h2>${esc(c.co)} 내부자 ${c.n}명이 최근 5거래일 동안 샀어요</h2>
 <p class="muted">장내매수 합계 ${esc(c.amt)}${mk === 'us' ? '' : '원'}</p>
-<div class="bars">${c.dayCounts.map((n, i) => `<span><em>${n}명</em><i style="height:${Math.round((n / Math.max(...c.dayCounts, 1)) * 44) || 2}px"></i><small>${esc(w.dows[i] || '')}</small></span>`).join('')}</div>
+<div class="bars">${c.dayCounts.map((n, i) => `<span><em>${n ? `${n}명` : ''}</em><i style="height:${Math.round((n / Math.max(...c.dayCounts, 1)) * 44) || 2}px"></i><small>${esc(w.dows[i] || '')}</small></span>`).join('')}</div>
 <a class="more" href="${esc(c.link)}">${esc(c.co)} 기록 보기</a>
 ${s.clusters.length > 1 ? `<a class="more ghost" href="${rankHref}#cluster">여럿이 같이 산 회사 ${s.clusters.length}곳 모두 보기</a>` : ''}
 </section>`
     : '';
 
+  const before = (n) => (w.hasPrev ? `그 전 5거래일 ${n}건` : '최근 5거래일 합계');
   const body = `<div class="stats">
-<div class="stat"><p>장내매수 보고</p><b>${w.buyN}<small>건</small></b><span>그 전 5거래일 ${w.prevBuyN}건</span></div>
-<div class="stat"><p>장내매도 보고</p><b>${w.sellN}<small>건</small></b><span>그 전 5거래일 ${w.prevSellN}건</span></div>
+<div class="stat"><p>장내매수 보고</p><b>${w.buyN}<small>건</small></b><span>${before(w.prevBuyN)}</span></div>
+<div class="stat"><p>장내매도 보고</p><b>${w.sellN}<small>건</small></b><span>${before(w.prevSellN)}</span></div>
 <div class="stat"><p>여럿이 같이 산 회사</p><b>${w.clusterN}<small>곳</small></b><span>같은 기간 내부자 3명 이상</span></div>
 </div>
 <div class="cols">
