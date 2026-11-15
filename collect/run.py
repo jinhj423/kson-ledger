@@ -78,7 +78,11 @@ def main():
 
     kr_state = load_json(os.path.join(DATA, "state", "kr.json"), {})
     kr = Store("kr")
-    debug = dart.collect(kr_state, kr.add, budget * 0.5, log)
+    try:
+        debug = dart.collect(kr_state, kr.add, budget * 0.5, log)
+    except Exception as e:  # keep what we have and still publish
+        log(f"KR: 중단 {type(e).__name__}: {e}")
+        debug = []
     kr.flush()
     prune_seen(kr_state, KEEP_DAYS["kr"])
     save_json(os.path.join(DATA, "state", "kr.json"), kr_state)
@@ -91,7 +95,10 @@ def main():
 
     us_state = load_json(os.path.join(DATA, "state", "us.json"), {})
     us = Store("us")
-    sec.collect(us_state, us.add, max(60.0, budget - (time.time() - t0) - 60), log)
+    try:
+        sec.collect(us_state, us.add, max(60.0, budget - (time.time() - t0) - 60), log)
+    except Exception as e:
+        log(f"US: 중단 {type(e).__name__}: {e}")
     us.flush()
     prune_seen(us_state, KEEP_DAYS["us"])
     save_json(os.path.join(DATA, "state", "us.json"), us_state)

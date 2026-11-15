@@ -9,6 +9,7 @@ import datetime as dt
 import os
 import re
 import time
+import urllib.error
 import xml.etree.ElementTree as ET
 
 from common import get
@@ -23,6 +24,7 @@ class Sec:
     def __init__(self, ua):
         self.h = {"User-Agent": ua, "Accept-Encoding": "identity"}
         self.calls = 0
+        self.forbidden = 0
         self._last = 0.0
 
     def get(self, url):
@@ -31,7 +33,13 @@ class Sec:
             time.sleep(wait)
         self._last = time.time()
         self.calls += 1
-        return get(url, headers=self.h)
+        try:
+            return get(url, headers=self.h, tries=1)
+        except urllib.error.HTTPError as e:
+            if e.code == 403:  # EDGAR answers 403 for missing files (and for blocked clients)
+                self.forbidden += 1
+                return None
+            raise
 
 
 def daily_index(sec, day):
@@ -195,4 +203,4 @@ def collect(state, store_event, budget_s, log):
         })
         store_event(info)
         kept += 1
-    log(f"US: 읽음 {n}건, 장내거래 {kept}건, 남은 대기 {len(pending)}건, 요청 {sec.calls}회")
+    log(f"US: 읽음 {n}건, 장내거래 {kept}건, 남은 대기 {len(pending)}건, 요청 {sec.calls}회, 403 {sec.forbidden}회")
