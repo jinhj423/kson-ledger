@@ -38,7 +38,7 @@ class Sec:
             self._last = time.time()
             self.calls += 1
         try:
-            return get(url, headers=self.h, tries=1)
+            return get(url, headers=self.h, timeout=15, tries=1)
         except urllib.error.HTTPError as e:
             if e.code == 403:  # EDGAR answers 403 for missing files (and for blocked clients)
                 self.forbidden += 1
@@ -180,12 +180,19 @@ def collect(state, store_event, budget_s, log):
                 pending.append(it)
                 queued.add(it["acc"])
 
-    add(current_feed(sec, 6))
+    try:
+        add(current_feed(sec, 6))
+    except Exception as e:  # EDGAR hiccup: the daily index covers it later
+        log(f"US: 오늘 목록 실패: {type(e).__name__}: {e}")
     for back in range(1, 63):
         day = today_et - dt.timedelta(days=back)
         if day.weekday() >= 5 or day.isoformat() in done_days:
             continue
-        items = daily_index(sec, day)
+        try:
+            items = daily_index(sec, day)
+        except Exception as e:
+            log(f"US: {day} 목록 실패: {type(e).__name__}: {e}")
+            break
         if items is not None:
             add(items)
             done_days.add(day.isoformat())
@@ -198,16 +205,25 @@ def collect(state, store_event, budget_s, log):
     def fetch(it):
         try:
             raw = sec.get(f"{BASE}/Archives/edgar/data/{it['cik']}/{it['acc']}.txt")
-            return it, (parse_form4(raw.decode("utf-8", "replace")) if raw else None)
-        except Exception as e:  # skip broken filings
-            log(f"US: {it['acc']} 실패: {e}")
-            return it, None
+            return it, (parse_form4(raw.decode("utf-8", "replace")) if raw else None), None
+        except Exception as e:
+            return it, None, e
 
-    n = kept = 0
+    n = kept = failed = 0
+    bad_batches = 0
     with ThreadPoolExecutor(4) as pool:
-        while pending and time.time() - t0 < budget_s:
+        while pending and time.time() - t0 < budget_s and bad_batches < 3:
             batch = [pending.pop(0) for _ in range(min(40, len(pending)))]
-            for it, info in pool.map(fetch, batch):
+            errs = 0
+            for it, info, err in pool.map(fetch, batch):
+                if err is not None:  # timeout / 503: try again in a later run
+                    errs += 1
+                    it["_tries"] = it.get("_tries", 0) + 1
+                    if it["_tries"] < 4:
+                        pending.append(it)
+                    else:
+                        seen[it["acc"]] = it["date"]
+                    continue
                 seen[it["acc"]] = it["date"]
                 n += 1
                 if not info:
@@ -226,4 +242,13 @@ def collect(state, store_event, budget_s, log):
                 })
                 store_event(info)
                 kept += 1
-    log(f"US: 읽음 {n}건, 장내거래 {kept}건, 남은 대기 {len(pending)}건, 요청 {sec.calls}회, 403 {sec.forbidden}회")
+            failed += errs
+            # EDGAR busy (most of a batch failing): back off, and stop after three such batches
+            if errs > len(batch) // 2:
+                bad_batches += 1
+                time.sleep(10)
+            else:
+                bad_batches = 0
+    pending.sort(key=lambda p: (p["date"], p["acc"]), reverse=True)
+    log(f"US: 읽음 {n}건, 장내거래 {kept}건, 실패 {failed}건(다음에 다시), 남은 대기 {len(pending)}건, "
+        f"요청 {sec.calls}회, 403 {sec.forbidden}회{', EDGAR 응답 지연으로 일찍 멈춤' if bad_batches >= 3 else ''}")

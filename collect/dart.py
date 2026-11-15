@@ -87,8 +87,8 @@ def kind_of(item):
     return None
 
 
-def scan(d, ty, bgn, end, seen, max_pages):
-    """Newest-first listing; stops after a page with nothing new."""
+def scan(d, ty, bgn, end, seen, max_pages, stop_on_seen=True):
+    """Newest-first listing; normally stops after a page with nothing new."""
     out, page = [], 1
     while page <= max_pages:
         data = d.call("list.json", bgn_de=bgn, end_de=end, pblntf_ty=ty,
@@ -96,7 +96,7 @@ def scan(d, ty, bgn, end, seen, max_pages):
         rows = data.get("list", [])
         fresh = [r for r in rows if r.get("rcept_no") not in seen]
         out += fresh
-        if not rows or not fresh or page >= int(data.get("total_page") or 1):
+        if not rows or (stop_on_seen and not fresh) or page >= int(data.get("total_page") or 1):
             break
         page += 1
     return out
@@ -287,11 +287,11 @@ def collect(state, store_event, budget_s, log):
         state["backfilled"] = True
 
         # reach further back once (older segment only), so '1달' can be compared with the month before
-        depth = state.get("depth", 30)
-        if depth < DEPTH:
-            end = ymd(today - dt.timedelta(days=depth))
+        if state.get("deep", 0) < DEPTH:
+            end = ymd(today - dt.timedelta(days=28))
             for ty, pages in (("D", 200), ("B", 60)):
-                for r in scan(d, ty, ymd(today - dt.timedelta(days=DEPTH)), end, set(seen) | in_pending, pages):
+                for r in scan(d, ty, ymd(today - dt.timedelta(days=DEPTH)), end, set(seen) | in_pending, pages,
+                              stop_on_seen=False):
                     k = kind_of(r)
                     if k and r["rcept_no"] not in in_pending:
                         r["_k"] = k
@@ -299,7 +299,7 @@ def collect(state, store_event, budget_s, log):
                         in_pending.add(r["rcept_no"])
                     elif not k:
                         seen[r["rcept_no"]] = r.get("rcept_dt", "")
-            state["depth"] = DEPTH
+            state["deep"] = DEPTH
             log(f"KR: {DEPTH}일 전까지 목록을 더 받음, 대기 {len(pending)}건")
 
         pending.sort(key=lambda r: r["rcept_no"], reverse=True)
