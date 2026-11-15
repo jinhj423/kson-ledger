@@ -1,0 +1,45 @@
+name: collect
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get previous data
+        run: |
+          git clone --quiet --depth 1 --branch data "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data || mkdir -p data
+          rm -rf data/.git
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          DATA_DIR: data
+          MAX_SECONDS: "780"
+        run: python collect/run.py
+
+      - name: Publish data branch
+        run: |
+          cd data
+          git init --quiet -b data
+          git add -A
+          git -c user.name="kson-bot" -c user.email="actions@users.noreply.github.com" commit --quiet -m "data $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data

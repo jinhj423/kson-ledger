@@ -1,0 +1,10 @@
+{
+  "name": "kson-ledger",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./public" },
+  "vars": {
+    "DATA_BASE": "https://raw.githubusercontent.com/jinhj423/kson-ledger/data/site",
+    "REPO_URL": "https://github.com/jinhj423/kson-ledger"
+  }
+}

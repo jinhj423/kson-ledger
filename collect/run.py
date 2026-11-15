@@ -1,0 +1,104 @@
+"""One collection run: KR (DART) + US (SEC) -> data/state, then rebuild data/site.
+
+Layout under DATA_DIR
+  state/kr.json, state/us.json   seen / pending queues
+  events/kr/YYYY-MM-DD.json      events by report (filing) date
+  events/us/YYYY-MM-DD.json
+  site/                          what the website reads
+  debug/                         raw samples the KR parser could not read
+"""
+import datetime as dt
+import glob
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+import build  # noqa: E402
+import dart  # noqa: E402
+import sec  # noqa: E402
+from common import load_json, now_kst, save_json  # noqa: E402
+
+DATA = os.environ.get("DATA_DIR", "data")
+KEEP_DAYS = {"kr": 130, "us": 70}
+
+
+def log(msg):
+    print(f"[{now_kst():%H:%M:%S}] {msg}", flush=True)
+
+
+class Store:
+    """Events grouped in one JSON file per day, keyed by event id."""
+
+    def __init__(self, mk):
+        self.mk = mk
+        self.dir = os.path.join(DATA, "events", mk)
+        self.days = {}
+
+    def _day(self, d):
+        if d not in self.days:
+            self.days[d] = {e["id"]: e for e in load_json(os.path.join(self.dir, f"{d}.json"), [])}
+        return self.days[d]
+
+    def add(self, ev):
+        self._day(ev["date"])[ev["id"]] = ev
+
+    def flush(self):
+        for d, evs in self.days.items():
+            save_json(os.path.join(self.dir, f"{d}.json"), sorted(evs.values(), key=lambda e: e["id"]))
+
+    def prune_and_load(self):
+        cutoff = (dt.date.today() - dt.timedelta(days=KEEP_DAYS[self.mk])).isoformat()
+        out = []
+        for path in sorted(glob.glob(os.path.join(self.dir, "*.json"))):
+            day = os.path.basename(path)[:-5]
+            if day < cutoff:
+                os.remove(path)
+                continue
+            out += load_json(path, [])
+        return out
+
+
+def prune_seen(state, keep_days):
+    cutoff = (dt.date.today() - dt.timedelta(days=keep_days + 10)).strftime("%Y%m%d")
+    seen = state.get("seen", {})
+    state["seen"] = {k: v for k, v in seen.items() if (v or "").replace("-", "") >= cutoff}
+
+
+def main():
+    budget = float(os.environ.get("MAX_SECONDS", "780"))
+    t0 = time.time()
+    os.makedirs(DATA, exist_ok=True)
+
+    kr_state = load_json(os.path.join(DATA, "state", "kr.json"), {})
+    kr = Store("kr")
+    debug = dart.collect(kr_state, kr.add, budget * 0.5, log)
+    kr.flush()
+    prune_seen(kr_state, KEEP_DAYS["kr"])
+    save_json(os.path.join(DATA, "state", "kr.json"), kr_state)
+    for rc, text in debug:
+        os.makedirs(os.path.join(DATA, "debug"), exist_ok=True)
+        with open(os.path.join(DATA, "debug", f"kr_{rc}.xml"), "w", encoding="utf-8") as f:
+            f.write(text)
+    for old in sorted(glob.glob(os.path.join(DATA, "debug", "*.xml")))[:-10]:
+        os.remove(old)
+
+    us_state = load_json(os.path.join(DATA, "state", "us.json"), {})
+    us = Store("us")
+    sec.collect(us_state, us.add, max(60.0, budget - (time.time() - t0) - 60), log)
+    us.flush()
+    prune_seen(us_state, KEEP_DAYS["us"])
+    save_json(os.path.join(DATA, "state", "us.json"), us_state)
+
+    site = os.path.join(DATA, "site")
+    for mk, store in (("kr", kr), ("us", us)):
+        events = store.prune_and_load()
+        build.build_market(mk, events, site)
+        log(f"{mk}: 화면 자료 {len(events)}건으로 만듦")
+    save_json(os.path.join(site, "meta.json"), {"built": now_kst().isoformat(timespec="minutes")})
+    log(f"끝 ({time.time() - t0:.0f}초)")
+
+
+if __name__ == "__main__":
+    main()
