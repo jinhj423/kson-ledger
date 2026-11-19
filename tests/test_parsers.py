@@ -141,6 +141,41 @@ def test_periods_and_prices():
     assert pr["from"] == "2026-08-15" and pr["avgSell"] == 0
 
 
+def test_price_flag_and_filtered_rank():
+    import json
+    import tempfile
+    from build import build_market, price_flag
+
+    def ev(i, tk, co, role, q, p, day="2026-11-13", cik="1"):
+        return {"id": f"u{i}", "mk": "us", "t": "trade", "date": day, "tk": tk, "cik": cik, "co": co,
+                "who": f"P{i}", "role": role, "buyQ": q, "buyAmt": q * p, "sellQ": 0, "sellAmt": 0,
+                "px": [[day, "b", q, p]]}
+
+    lona = ev(1, "LONA", "LeonaBio, Inc.", "10% 주주", 3149470, 3149.47)
+    acme = [ev(2, "ACME", "Acme Corp", "Chief Executive Officer", 1000, 10),
+            ev(3, "ACME", "Acme Corp", "이사", 1000, 11),
+            ev(4, "ACME", "Acme Corp", "이사", 1000, 120)]
+    fund = ev(5, "NFRX", "2023 ETF Series Trust", "이사", 5000, 30)
+    nokey = ev(6, "", "Hancock Senior Loan Trust", "이사", 9000, 30, cik="1742951")
+    holder = ev(7, "BIGH", "Big Holder Inc", "10% 주주", 9000, 30)
+    good = ev(8, "GOOD", "Good Inc", "Chief Financial Officer", 2000, 40)
+    evs = [lona, *acme, fund, nokey, holder, good]
+    assert price_flag(evs) == {"u1", "u4"}
+
+    out = tempfile.mkdtemp()
+    site = build_market("us", evs, out, "2026-11-13T18:00")
+    x = [r["link"] for r in site["p"]["1m"]["rankBuyX"]]
+    assert x == ["/u/GOOD/", "/u/ACME/"], x  # 80,000 > 21,000 (flagged 120,000 left out)
+    allr = [r["link"] for r in site["p"]["1m"]["rankBuy"]]
+    assert "/u/LONA/" not in allr and "/u/BIGH/" in allr
+    lrow = [r for r in site["feed"] if r["id"] == "u1"][0]
+    assert lrow["chk"] and lrow["d"] == "단가 확인 필요"
+    rec = json.load(open(os.path.join(out, "recent_us.json"), encoding="utf-8"))
+    assert rec["ACME"]["people"] == 3 and rec["ACME"]["netV"] == 0.0 and len(rec["ACME"]["last"]) == 3
+    assert rec["GOOD"]["link"] == "/u/GOOD/" and rec["GOOD"]["last"][0]["kind"] == "buy"
+    assert rec["LONA"]["last"][0]["chk"] is True
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

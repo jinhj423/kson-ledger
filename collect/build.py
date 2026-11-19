@@ -75,6 +75,8 @@ def display(ev):
             row["d"] = "소유 변동"
         row["dk"] = "buy" if kind == "buy" or (kind == "mixed" and net > 0) else (
             "sell" if kind in ("sell", "mixed") else "muted")
+        if ev.get("chk"):
+            row["d"], row["dk"], row["chk"] = "단가 확인 필요", "muted", True
     elif t == "major":
         who, rate, chg = ev.get("who", ""), ev.get("rate", 0), ev.get("rateChg", 0)
         if ev.get("new"):
@@ -111,6 +113,49 @@ def _key(ev):
 
 PERIODS = (("1m", 20, "1달"), ("2w", 10, "2주"))  # first one is the default view
 PRICE_DAYS = 90
+# US issuers that are funds/ETFs, not operating companies (5-letter tickers ending in X are mutual funds)
+FUND_RE = re.compile(r"\bFUNDS?\b|\bETF\b|\bPORTFOLIO\b|MUNICIPAL|\bTERM TRUST\b|\bSERIES TRUST\b|\bBDC\b|\bINTERVAL\b", re.I)
+
+
+def _avg_px(ev):
+    pts = _trade_points(ev)
+    q = sum(x[2] for x in pts)
+    return (sum(x[2] * x[3] for x in pts) / q, pts) if q else (0, pts)
+
+
+def price_flag(evs):
+    """Ids of trade reports whose unit price is implausible: 10x off the median of the same company's
+    other reports (needs 2+ others), or (US) $1,000+/share on 100,000+ shares (e.g. a filing that typed
+    the share count into the price box)."""
+    by_co = collections.defaultdict(list)
+    bad = set()
+    for e in evs:
+        if e["t"] != "trade":
+            continue
+        p, pts = _avg_px(e)
+        if not p:
+            continue
+        if e["mk"] == "us" and any(px >= 1000 and q >= 100_000 for _, _, q, px in pts):
+            bad.add(e["id"])
+        by_co[_key(e)].append((e["id"], p))
+    for rows in by_co.values():
+        for i, (eid, p) in enumerate(rows):
+            others = sorted(x for j, (_, x) in enumerate(rows) if j != i)
+            if len(others) >= 2:
+                m = len(others) // 2
+                med = others[m] if len(others) % 2 else (others[m - 1] + others[m]) / 2
+                if p > 10 * med or p < med / 10:
+                    bad.add(eid)
+    return bad
+
+
+def is_insider_us(ev):
+    """US report from an operating company's officer or director (not a fund, not a 10%-holder-only filer)."""
+    k = _key(ev) or ""
+    tk = ev.get("tk") or ""
+    return (not k.startswith("cik") and not FUND_RE.search(ev.get("co", ""))
+            and not (len(tk) == 5 and tk.upper().endswith("X"))
+            and (ev.get("role") or "").strip() not in ("", "10% 주주"))
 
 
 def _trade_points(ev):
@@ -132,7 +177,7 @@ def price_block(evs, kr, end):
     start = (dt.date.fromisoformat(end) - dt.timedelta(days=PRICE_DAYS)).isoformat()
     pts, tot = [], {"b": [0.0, 0.0], "s": [0.0, 0.0]}
     for e in evs:
-        if e["t"] != "trade":
+        if e["t"] != "trade" or e.get("chk"):
             continue
         sides = collections.defaultdict(lambda: [0.0, 0.0, ""])
         for d, k, q, p in _trade_points(e):
@@ -157,6 +202,8 @@ def build_market(mk, events, out, updated="", issuers=None, complete_after=""):
     kr = mk == "kr"
     money = fmt_krw if kr else fmt_usd
     unit = 1e8 if kr else 1e6
+    bad = price_flag(events)
+    events = [dict(e, buyAmt=0, sellAmt=0, chk=True) if e["id"] in bad else e for e in events]
     trades = [e for e in events if e["t"] == "trade"]
     dates = sorted({e["date"] for e in events if dt.date.fromisoformat(e["date"]).weekday() < 5})
 
@@ -193,16 +240,20 @@ def window(pk, n, label, dates, trades, events, agg, kr, money, unit, complete_a
     last_set = set(last)
 
     # rankings: net amount by company in the window
-    by_co = collections.defaultdict(lambda: {"net": 0.0, "co": "", "cls": "", "n": 0})
-    for e in trades:
-        if e["date"] in last_set:
-            k = _key(e)
-            if not k:
-                continue
-            x = by_co[k]
-            x["net"] += e.get("buyAmt", 0) - e.get("sellAmt", 0)
-            x["co"], x["cls"] = e.get("co", ""), (e.get("cls") if kr else e.get("tk", ""))
-            x["n"] += 1
+    def net_by_co(keep):
+        by_co = collections.defaultdict(lambda: {"net": 0.0, "co": "", "cls": "", "n": 0})
+        for e in trades:
+            if e["date"] in last_set and keep(e):
+                k = _key(e)
+                if not k:
+                    continue
+                x = by_co[k]
+                x["net"] += e.get("buyAmt", 0) - e.get("sellAmt", 0)
+                x["co"], x["cls"] = e.get("co", ""), (e.get("cls") if kr else e.get("tk", ""))
+                x["n"] += 1
+        return by_co
+
+    by_co = net_by_co(lambda e: True)
 
     def rank_rows(items):
         return [{"n": i + 1, "co": v["co"], "i": _initial(v["co"]), "sub": v["cls"],
@@ -249,8 +300,13 @@ def window(pk, n, label, dates, trades, events, agg, kr, money, unit, complete_a
         "majorN": sum(1 for e in events if e["t"] == "major" and e.get("new") and e["date"] in last_set),
         "buybackN": sum(1 for e in events if e["t"] == "buyback" and e["date"] in last_set),
     }
-    return {"w": w, "series": series, "rankBuy": rank_rows(pos), "rankSell": rank_rows(neg),
-            "clusters": clusters[:12]}
+    res = {"w": w, "series": series, "rankBuy": rank_rows(pos), "rankSell": rank_rows(neg),
+           "clusters": clusters[:12]}
+    if not kr:  # officer/director buys at operating companies only (funds, ticker-less issuers, 10% holders out)
+        bx = net_by_co(is_insider_us)
+        res["rankBuyX"] = rank_rows(sorted(((k, v) for k, v in bx.items() if v["net"] > 0),
+                                           key=lambda kv: -kv[1]["net"])[:30])
+    return res
 
 
 def write_companies(mk, recent, dates, out, issuers, kr, money, unit, updated):
@@ -262,7 +318,7 @@ def write_companies(mk, recent, dates, out, issuers, kr, money, unit, updated):
         k = _key(e)
         if k:
             groups[k].append(e)
-    index = []
+    index, rec = [], {}
     cutoff = (dt.date.fromisoformat(dates[-1]) - dt.timedelta(days=90)).isoformat() if dates else ""
     end = (updated or (dates[-1] if dates else dt.date.today().isoformat()))[:10]
     for k, evs in groups.items():
@@ -280,6 +336,13 @@ def write_companies(mk, recent, dates, out, issuers, kr, money, unit, updated):
             "events": [display(e) for e in evs[:200]],
         })
         index.append([k, first.get("co", ""), US_KO.get(k, "") if not kr else ""])
+        if t90:
+            rec[k] = {"co": first.get("co", ""), "link": f"/{'c' if kr else 'u'}/{k}/",
+                      "buy": money(b), "sell": money(s), "net": money(b - s, sign=True),
+                      "netV": round((b - s) / unit, 1), "people": len({e.get("who") for e in t90}), "n": len(t90),
+                      "last": [{x: r[x] for x in ("date", "sub", "kind", "amt", "d", "url", "chk") if x in r}
+                               for r in map(display, t90[:5])]}
+    save_json(os.path.join(out, f"recent_{mk}.json"), rec)
     # US issuers that filed Form 4s without open-market trades: searchable, with an explanatory page
     for k, (co, last) in (issuers or {}).items():
         if k in groups:
