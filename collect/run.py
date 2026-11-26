@@ -10,15 +10,17 @@ Layout under DATA_DIR
 import datetime as dt
 import glob
 import os
+import re
 import sys
 import time
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 import build  # noqa: E402
 import dart  # noqa: E402
 import sec  # noqa: E402
-from common import load_json, now_kst, save_json  # noqa: E402
+from common import get, load_json, now_kst, save_json  # noqa: E402
 
 DATA = os.environ.get("DATA_DIR", "data")
 KEEP_DAYS = {"kr": 130, "us": 95}
@@ -65,6 +67,37 @@ class Store:
         return out
 
 
+def resample(data, listing, fetch, log, limit=10):
+    """Save the raw DART document of each filing number in `listing` (collect/resample.txt) to
+    debug/kr_<no>.xml once, so a parser problem can be fixed from the real text."""
+    if not os.path.exists(listing):
+        return
+    with open(listing, encoding="utf-8") as f:
+        nos = re.findall(r"^\s*(\d{14})\b", f.read(), re.M)[:limit]
+    for no in nos:
+        out = os.path.join(data, "debug", f"kr_{no}.xml")
+        if os.path.exists(out):
+            continue
+        try:
+            raw = fetch(no)
+        except Exception as e:  # DART busy or unreachable: try the rest next run
+            log(f"KR: 원문 다시 받기 {no} 실패, 다음 실행에: {type(e).__name__}")
+            break
+        if raw and raw[:2] == b"PK":
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(dart.unzip_text(raw)[:300000])
+            log(f"KR: 원문 다시 받음 {no}")
+        else:
+            why = re.sub(r"<[^>]+>", " ", (raw or b"").decode("utf-8", "replace"))
+            log(f"KR: 원문 다시 받기 {no} 없음: {' '.join(why.split())[:100] or '응답 없음'}")
+
+
+def prune_debug(data, keep=30):
+    for old in sorted(glob.glob(os.path.join(data, "debug", "*.xml")))[:-keep]:
+        os.remove(old)
+
+
 def prune_seen(state, keep_days):
     cutoff = (dt.date.today() - dt.timedelta(days=keep_days + 10)).strftime("%Y%m%d")
     seen = state.get("seen", {})
@@ -90,8 +123,12 @@ def main():
         os.makedirs(os.path.join(DATA, "debug"), exist_ok=True)
         with open(os.path.join(DATA, "debug", f"kr_{rc}.xml"), "w", encoding="utf-8") as f:
             f.write(text)
-    for old in sorted(glob.glob(os.path.join(DATA, "debug", "*.xml")))[:-10]:
-        os.remove(old)
+    key = os.environ.get("DART_API_KEY")
+    if key:
+        resample(DATA, os.path.join(os.path.dirname(__file__), "resample.txt"),
+                 lambda no: get(dart.API + "document.xml?" + urllib.parse.urlencode(
+                     {"crtfc_key": key, "rcept_no": no}), timeout=30, tries=1), log)
+    prune_debug(DATA)
 
     us_state = load_json(os.path.join(DATA, "state", "us.json"), {})
     us = Store("us")
