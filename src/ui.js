@@ -10,71 +10,7 @@ export function dayLabel(iso) {
   return `${m}월 ${d}일`;
 }
 
-const MK = { kr: { home: '/', feed: '/feed/', rank: '/rank/' }, us: { home: '/us/', feed: '/us/feed/', rank: '/us/rank/' } };
-
-function header(mk, active) {
-  const p = MK[mk];
-  const nav = [['home', '홈', p.home], ['feed', '실시간 공시', p.feed], ['rank', '랭킹', p.rank]]
-    .map(([k, label, href]) => `<a href="${href}"${k === active ? ' class="on" aria-current="page"' : ''}>${label}</a>`)
-    .join('');
-  return `<header class="hdr wrap">
-<a class="logo" href="/"><span class="mark" aria-hidden="true">큰</span><span>${SITE}</span></a>
-<nav class="nav" aria-label="주 메뉴">${nav}</nav>
-<div class="tools">
-<form class="search" action="/search/" method="get" role="search">
-<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>
-<label class="sr" for="q">회사 검색</label>
-<input id="q" name="q" type="search" placeholder="회사 이름이나 종목코드" autocomplete="off">
-<ul class="sugg" hidden></ul>
-</form>
-<div class="seg" role="group" aria-label="시장">
-<a href="/"${mk === 'kr' ? ' class="on" aria-current="true"' : ''}>한국</a><a href="/us/"${mk === 'us' ? ' class="on" aria-current="true"' : ''}>미국</a>
-</div>
-</div>
-</header>`;
-}
-
-function footer(env) {
-  const issues = env.REPO_URL ? `${env.REPO_URL}/issues` : '#';
-  return `<section class="wrap sources"><p>공시는 이 공개 자료만 씁니다</p><div><span>금융감독원 DART</span><span>미국 SEC EDGAR</span><span>주가 차트 TradingView</span></div></section>
-<footer class="wrap foot">
-<p>${SITE}는 금융감독원 DART와 미국 SEC EDGAR에 공개된 공시를 정리해 보여주는 정보 서비스예요. 특정 종목을 사거나 팔라고 권하지 않으며, 투자 판단과 그 결과는 이용자 본인에게 있어요. 공시 원문과 다를 수 있으니 중요한 내용은 원문으로 확인해 주세요.</p>
-<nav aria-label="사이트 정보"><a href="/about/">소개</a><a href="/sources/">방법과 출처</a><a href="/privacy/">개인정보처리방침</a><a href="${esc(issues)}" rel="noopener">문의</a></nav>
-</footer>`;
-}
-
-export function layout(env, { title, desc, path, mk = 'kr', active = '', body, glow = '' }) {
-  const full = title ? `${title} — ${SITE}` : `${SITE} — 임원·대주주가 사고판 기록`;
-  const url = `${env.ORIGIN || ''}${path}`;
-  const ads = env.ADSENSE_CLIENT
-    ? `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${esc(env.ADSENSE_CLIENT)}" crossorigin="anonymous"></script>`
-    : '';
-  return `<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(full)}</title>
-<meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="${esc(url)}">
-<meta property="og:type" content="website"><meta property="og:site_name" content="${SITE}">
-<meta property="og:title" content="${esc(full)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url)}">
-<meta name="theme-color" content="#08090C">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="/app.css">
-${ads}
-</head>
-<body>
-<div class="glow">${header(mk, active)}${glow}</div>
-<main class="wrap">${body}</main>
-${footer(env)}
-<script src="/app.js" defer></script>
-</body>
-</html>`;
-}
-
+// ---------- numbers ----------
 // "+353억", "−1.2조", "+$103.9B" -> size in 억 (kr) or $M (us), for bar lengths.
 const SCALE = { 조: 10000, 억: 1, 만: 0.0001, B: 1000, M: 1, K: 0.001 };
 export function magnitude(s) {
@@ -101,88 +37,188 @@ export function prevNetText(mk, w) {
   return netText(mk, w.diffUp ? w.net - diff : w.net + diff);
 }
 
+export function heroSentence(mk, net) {
+  if (!net) return '산 금액과 판 금액이 같아요.';
+  const amt = netText(mk, Math.abs(net)).replace(/^\+/, '');
+  const shown = mk === 'us' ? amt : `${amt} 원`;
+  return net < 0 ? `내부자들이 산 것보다 ${shown} 더 팔았어요.` : `내부자들이 판 것보다 ${shown} 더 샀어요.`;
+}
+
 const KINDS = { buy: '장내매수', sell: '장내매도', mixed: '매수와 매도', major: '5% 보고', buyback: '자사주', control: '최대주주 변경', other: '소유 변동' };
 export function kindLabel(r) {
   const tone = r.dk === 'buy' || r.dk === 'sell' ? r.dk : '';
   return [KINDS[r.kind] || '공시', tone];
 }
 
-// One feed / company-record line. Amount on the right, report type under it, share change in the sentence.
-function rowParts(r, { lead, name = '', subCls = 'sb', after = '' }) {
+const shareChange = (r) => (/%p$/.test(r.d || '') && !/^[+\-−]?0\.00%p$/.test(r.d) ? r.d : '');
+const ppCls = (s) => (s.startsWith('+') ? 'up' : s ? 'dn' : '');
+
+// ---------- layout ----------
+const MK = { kr: { home: '/', feed: '/feed/', rank: '/rank/' }, us: { home: '/us/', feed: '/us/feed/', rank: '/us/rank/' } };
+
+// Runs before paint: saved choice, otherwise the device setting.
+const THEME_BOOT = `(function(){var t;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.dataset.theme=t})();`;
+
+const SUN = '<svg class="i-sun" aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="9" r="3.6"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.7 3.7l1.4 1.4M12.9 12.9l1.4 1.4M3.7 14.3l1.4-1.4M12.9 5.1l1.4-1.4"/></svg>';
+const MOON = '<svg class="i-moon" aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 10.6A6.5 6.5 0 0 1 7.4 3a6.5 6.5 0 1 0 7.6 7.6Z"/></svg>';
+
+function header(mk, active) {
+  const p = MK[mk];
+  const nav = [['home', '홈', p.home], ['feed', '실시간 공시', p.feed], ['rank', '랭킹', p.rank]]
+    .map(([k, label, href]) => `<a href="${href}"${k === active ? ' class="on" aria-current="page"' : ''}>${label}</a>`)
+    .join('');
+  return `<header class="hd"><div class="w">
+<a class="logo" href="/">${SITE}</a>
+<nav class="nav" aria-label="주 메뉴">${nav}</nav>
+<form class="search" action="/search/" method="get" role="search">
+<label class="sr" for="q">회사 검색</label>
+<input id="q" name="q" type="search" placeholder="회사 이름이나 종목코드" autocomplete="off">
+<ul class="sugg" hidden></ul>
+</form>
+<nav class="mk" aria-label="시장"><a href="/"${mk === 'kr' ? ' class="on" aria-current="true"' : ''}>한국</a><a href="/us/"${mk === 'us' ? ' class="on" aria-current="true"' : ''}>미국</a></nav>
+<button type="button" class="theme" data-theme-toggle aria-label="화면 색 바꾸기">${SUN}${MOON}</button>
+</div></header>`;
+}
+
+function footer(env) {
+  const issues = env.REPO_URL ? `${env.REPO_URL}/issues` : '#';
+  return `<footer class="ft"><div class="w">
+<p class="srcs">공시는 금융감독원 DART와 미국 SEC EDGAR, 주가 차트는 TradingView 자료만 써요.</p>
+<p>${SITE}는 공개된 공시를 정리해 보여주는 정보 서비스예요. 특정 종목을 사거나 팔라고 권하지 않으며, 투자 판단과 그 결과는 이용자 본인에게 있어요. 공시 원문과 다를 수 있으니 중요한 내용은 원문으로 확인해 주세요.</p>
+<nav aria-label="사이트 정보"><a href="/about/">소개</a><a href="/sources/">방법과 출처</a><a href="/privacy/">개인정보처리방침</a><a href="${esc(issues)}" rel="noopener">문의</a></nav>
+</div></footer>`;
+}
+
+export function layout(env, { title, desc, path, mk = 'kr', active = '', body }) {
+  const full = title ? `${title} — ${SITE}` : `${SITE} — 임원·대주주가 사고판 기록`;
+  const url = `${env.ORIGIN || ''}${path}`;
+  const ads = env.ADSENSE_CLIENT
+    ? `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${esc(env.ADSENSE_CLIENT)}" crossorigin="anonymous"></script>`
+    : '';
+  return `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>${THEME_BOOT}</script>
+<title>${esc(full)}</title>
+<meta name="description" content="${esc(desc)}">
+<link rel="canonical" href="${esc(url)}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="${SITE}">
+<meta property="og:title" content="${esc(full)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url)}">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0C0D10" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="/app.css">
+${ads}
+</head>
+<body>
+${header(mk, active)}
+<main class="w">${body}</main>
+${footer(env)}
+<script src="/app.js" defer></script>
+</body>
+</html>`;
+}
+
+// ---------- tables ----------
+const tag = (r) => {
   const [kl, tone] = kindLabel(r);
-  const pp = /%p$/.test(r.d || '') && !/^[+\-−]?0\.00%p$/.test(r.d) ? `, 지분 ${r.d}` : '';
-  const t = tone ? ` ${tone}` : '';
-  return `<span class="av${t}" aria-hidden="true">${esc(lead)}</span>
-<span class="rm">${name}<span class="${subCls}">${esc(r.sub)}${esc(pp)}${after}</span></span>
-<span class="ra"><span class="am">${esc(r.amt)}</span><span class="dv${t}">${kl}</span></span>`;
+  return `<span class="tag${tone ? ` ${tone}` : ''}">${kl}</span>`;
+};
+
+// Latest filings: one row per report. The company cell opens the company sheet.
+export function feedTable(rows, { date = true } = {}) {
+  if (!rows.length) return '<p class="empty">이 종류의 공시는 아직 없어요.</p>';
+  const body = rows.map((r) => {
+    const pp = shareChange(r);
+    const co = r.link ? `<a href="${esc(r.link)}" data-pop>${esc(r.co)}</a>` : esc(r.co);
+    return `<tr>${date ? `<td class="dt">${esc((r.dl || '').slice(0, 5))}</td>` : ''}<td class="co">${co}</td><td class="tx">${esc(r.sub)}</td><td class="kd">${tag(r)}</td><td class="r am">${esc(r.amt)}</td><td class="r pp ${ppCls(pp)}">${esc(pp) || '—'}</td></tr>`;
+  }).join('');
+  return `<table class="tbl feed"><thead><tr>${date ? '<th>보고일</th>' : ''}<th>회사</th><th>내용</th><th>구분</th><th class="r">금액·지분율</th><th class="r">지분 변화</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
-export function feedRow(r) {
-  const inner = rowParts(r, { lead: r.i, name: `<span class="nm">${esc(r.co)}</span>` });
-  return r.link ? `<a class="row" href="${esc(r.link)}" data-pop>${inner}</a>` : `<div class="row">${inner}</div>`;
+// One company's records: who did what, with a link to the filing.
+export function recordTable(rows) {
+  const body = rows.map((r) => {
+    const pp = shareChange(r);
+    return `<tr><td class="dt">${esc((r.dl || '').slice(0, 5))}</td><td class="tx strong">${esc(r.sub)}</td><td class="kd">${tag(r)}</td><td class="r am">${esc(r.amt)}</td><td class="r pp ${ppCls(pp)}">${esc(pp) || '—'}</td><td class="r"><a class="src" href="${esc(r.url)}" rel="noopener" target="_blank">원문</a></td></tr>`;
+  }).join('');
+  return `<table class="tbl rec"><thead><tr><th>보고일</th><th>내용</th><th>구분</th><th class="r">금액·지분율</th><th class="r">지분 변화</th><th class="r"><span class="sr">원문 링크</span></th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
-// Company record line: the sentence is the headline, with a link to the filing.
-export function eventRow(r) {
-  const after = ` <a class="src" href="${esc(r.url)}" rel="noopener" target="_blank">원문</a>`;
-  return `<div class="row ev">${rowParts(r, { lead: r.w || r.i, subCls: 'sb strong', after })}</div>`;
-}
-
-export function rankRows(rows, cls) {
+export function rankTable(rows, cls) {
   if (!rows.length) return '<p class="empty">아직 해당하는 회사가 없어요.</p>';
   const top = Math.max(...rows.map((k) => magnitude(k.v)), 1e-9);
-  return rows
-    .map((k) => {
-      const w = Math.max(2, Math.round((magnitude(k.v) / top) * 100));
-      return `<a class="rrow" href="${esc(k.link)}" data-pop><span class="rn${k.n <= 3 ? ' top' : ''}">${k.n}</span><span class="rm"><span class="nm">${esc(k.co)}</span><span class="sb">${esc(k.sub)}</span></span><span class="rx"><span class="rv ${cls}">${esc(k.v)}</span><span class="mb ${cls}" aria-hidden="true"><i style="width:${w}%"></i></span></span></a>`;
-    })
-    .join('');
+  const body = rows.map((k) => {
+    const w = Math.max(3, Math.round((magnitude(k.v) / top) * 100));
+    return `<tr><td class="n">${k.n}</td><td class="co"><a href="${esc(k.link)}" data-pop>${esc(k.co)}</a></td><td class="sub">${esc(k.sub)}</td><td class="r v ${cls}">${esc(k.v)}</td><td class="mbc"><span class="mb ${cls}" aria-hidden="true"><i style="width:${w}%"></i></span></td></tr>`;
+  }).join('');
+  return `<table class="tbl rank ${cls}"><tbody>${body}</tbody></table>`;
 }
 
-// Daily net-buy bars around a zero line: one bar per reporting day, red above, blue below.
-export function chart(series, H = 240) {
+// ---------- events on the daily chart ----------
+const md = (iso) => (iso ? `${iso.slice(5, 7)}.${iso.slice(8, 10)}` : '');
+
+// Events of this market that fall on a chart day, with that day's index.
+export function eventsFor(mk, series, events) {
+  const idx = new Map(series.map((s, i) => [s.d.slice(0, 5), i]));
+  return (events || [])
+    .filter((e) => e[mk] && idx.has(md(e[mk])))
+    .map((e) => ({ ...e, i: idx.get(md(e[mk])) }))
+    .sort((a, b) => a.i - b.i);
+}
+
+// Daily net-buy bars around a zero line, with event dots on a rail underneath.
+export function chart(series, events = [], H = 200) {
   const vs = series.map((s) => s.v);
   let max = Math.max(0, ...vs);
   let min = Math.min(0, ...vs);
   if (max === min) { max += 1; min -= 1; }
-  const pad = 10;
+  const pad = 6;
   const n = vs.length;
   const Y = (v) => pad + ((max - v) / (max - min)) * (H - pad * 2);
   const zy = Y(0);
   const step = 100 / n;
   const f = (x) => x.toFixed(2);
-  const pts = series.map((s, i) => {
+  const pts = series.map((s) => {
     const y = Y(s.v);
     return {
-      x: +f(step * (i + 0.5)), top: +Math.min(y, zy).toFixed(1), h: +Math.max(2, Math.abs(zy - y)).toFixed(1),
-      d: s.d, t: s.txt, up: s.v >= 0, s: s.buyN != null ? `산 보고 ${s.buyN}건, 판 보고 ${s.sellN}건` : '',
+      top: +Math.min(y, zy).toFixed(1), d: s.d, t: s.txt,
+      s: s.buyN != null ? `산 보고 ${s.buyN}건, 판 보고 ${s.sellN}건` : '',
     };
   });
-  const bars = pts.map((p, i) => `<span class="bar ${p.up ? 'up' : 'dn'}" style="left:${f(step * i)}%;width:${f(step)}%;top:${p.top}px;height:${p.h}px"></span>`).join('');
-  const hiTxt = series.reduce((a, s) => (s.v > a.v ? s : a), series[0]);
-  const loTxt = series.reduce((a, s) => (s.v < a.v ? s : a), series[0]);
-  const yl = [hiTxt.v > 0 ? `<span class="yl" style="top:${Y(hiTxt.v).toFixed(1)}px">${esc(hiTxt.txt)}</span>` : '',
-    loTxt.v < 0 ? `<span class="yl" style="top:${Y(loTxt.v).toFixed(1)}px">${esc(loTxt.txt)}</span>` : ''].join('');
-  return `<div class="chart" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}" role="img" aria-label="최근 ${n}거래일 하루 순매수 금액, 가장 많이 산 날 ${esc(hiTxt.txt)}, 가장 많이 판 날 ${esc(loTxt.txt)}">
-<div class="bars-in reveal">${bars}</div>
-<span class="zero" style="top:${zy.toFixed(1)}px" aria-hidden="true"></span>
-${yl}
-<div class="tip" aria-hidden="true"><span></span><b></b><small></small></div>
-<div class="hit"></div>
+  const bars = series.map((s, i) => {
+    const y = Y(s.v);
+    return `<span class="bar ${s.v >= 0 ? 'up' : 'dn'}" data-i="${i}" style="left:${f(step * i)}%;width:${f(step)}%;top:${Math.min(y, zy).toFixed(1)}px;height:${Math.max(2, Math.abs(zy - y)).toFixed(1)}px"></span>`;
+  }).join('');
+  const hi = series.reduce((a, s) => (s.v > a.v ? s : a), series[0]);
+  const lo = series.reduce((a, s) => (s.v < a.v ? s : a), series[0]);
+  const yl = [hi.v > 0 ? `<span class="yl" style="top:${Y(hi.v).toFixed(1)}px">${esc(hi.txt)}</span>` : '',
+    lo.v < 0 ? `<span class="yl" style="top:${Y(lo.v).toFixed(1)}px">${esc(lo.txt)}</span>` : ''].join('');
+  const evs = events.map((e, k) => {
+    const s = series[e.i];
+    const src = (e.src || []).map((x) => `<a href="${esc(x.u)}" rel="noopener nofollow" target="_blank">${esc(x.t)}</a>`).join('');
+    return `<div class="ev ${k % 2 ? 'dn' : 'up'} imp${e.imp === 3 ? 3 : 2}" style="left:${f(step * (e.i + 0.5))}%" data-i="${e.i}">
+<button type="button" class="dot" aria-label="${esc(s.d)} ${esc(e.t)}" aria-expanded="false" aria-controls="ev${k}"></button>
+<span class="stem" aria-hidden="true"></span>
+<div class="evc" id="ev${k}" role="group" aria-label="${esc(e.t)}"><p class="meta"><b>${esc(e.cat)}</b>${esc(s.d)}</p><p class="tt">${esc(e.t)}</p><p class="ex">${esc(e.x)}</p>
+<p class="nb">이날 내부자 순매수 <b class="${s.v >= 0 ? 'u' : 'd'}">${esc(s.txt)}</b></p>${src ? `<p class="es">출처 ${src}</p>` : ''}</div>
 </div>`;
-}
-
-export function xLabels(series) {
-  const n = series.length;
-  if (!n) return '';
+  }).join('');
   const idx = [...new Set([0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round((3 * (n - 1)) / 4), n - 1])];
-  return `<div class="xl" aria-hidden="true">${idx
-    .map((i) => {
-      const x = ((i + 0.5) / n) * 100;
-      const al = i === 0 ? 'left:0' : i === n - 1 ? 'right:0' : `left:${x.toFixed(2)}%;transform:translateX(-50%)`;
-      return `<span style="${al}">${esc(series[i].d.slice(0, 5))}</span>`;
-    })
-    .join('')}</div>`;
+  const xl = idx.map((i) => `<span style="left:${f(step * (i + 0.5))}%">${esc(series[i].d.slice(0, 5))}</span>`).join('');
+  const label = `최근 ${n}거래일 하루 순매수 금액, 가장 많이 산 날 ${hi.txt}, 가장 많이 판 날 ${lo.txt}`;
+  return `<div class="chart">
+<div class="plot" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}" role="img" aria-label="${esc(label)}">
+<div class="bars reveal">${bars}</div><span class="zero" style="top:${zy.toFixed(1)}px" aria-hidden="true"></span>${yl}
+<div class="tip" aria-hidden="true"><span></span><b></b><small></small></div><div class="hit"></div>
+</div>
+${events.length ? `<div class="rail">${evs}</div>` : '<div class="rail empty"></div>'}
+<div class="xl" aria-hidden="true">${xl}</div>
+</div>`;
 }
 
 // ---------- company chart: TradingView price line (A) + reported trade prices (C) ----------
@@ -251,7 +287,7 @@ ${labels}${ys}${dots}
 <div class="tip" aria-hidden="true"><span></span><b></b><small></small></div>
 <div class="hit"></div>
 </div>
-<div class="xl" aria-hidden="true"><span style="left:0">${dayLabel(pr.from)}</span><span style="left:50%;transform:translateX(-50%)">${dayLabel(mid)}</span><span style="right:0">${dayLabel(pr.to)}</span></div>
+<div class="xl" aria-hidden="true"><span style="left:0;transform:none">${dayLabel(pr.from)}</span><span style="left:50%">${dayLabel(mid)}</span><span style="left:auto;right:0;transform:none">${dayLabel(pr.to)}</span></div>
 <div class="legend"><span><i class="b"></i>장내매수</span><span><i class="s"></i>장내매도</span><span><i class="avg"></i>90일 평균 단가</span></div>
 <p class="note">보고서에 적힌 거래일과 단가예요. 점이 클수록 거래 금액이 커요. 점을 누르거나 마우스를 올리면 누가 얼마에 거래했는지 보여요.</p>`;
 }

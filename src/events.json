@@ -1,0 +1,62 @@
+{
+  "note": "홈 순매수 차트 아래 이벤트 점. kr·us는 그 시장 차트에 찍을 날짜(한국은 KST, 미국은 현지 날짜). 숫자는 공개 출처 두 곳으로 확인한 것만. 문장은 새로 쓰고 기사 문장을 옮기지 않는다. cat: 금리·지표·시장. imp: 3 큰 점, 2 작은 점.",
+  "updated": "2026-11-27",
+  "items": [
+    {
+      "kr": "2026-11-06",
+      "cat": "시장",
+      "imp": 3,
+      "t": "코스피 6% 급락",
+      "x": "미국 중간선거 뒤 AI 데이터센터 규제 우려로 반도체주가 크게 내렸어요. 코스피는 6.02% 내린 5,059.69로 마쳤고 장중 서킷브레이커가 걸렸어요.",
+      "src": [
+        { "t": "스페셜타임스", "u": "https://www.specialtimes.co.kr/news/articleView.html?idxno=482593" },
+        { "t": "비즈워치", "u": "https://news.bizwatch.co.kr/article/market/2026/11/06/0041" }
+      ]
+    },
+    {
+      "kr": "2026-11-11",
+      "cat": "시장",
+      "imp": 2,
+      "t": "반도체 반등",
+      "x": "AI 투자 심리가 살아나며 반도체 대형주가 올랐어요. 코스피 +2.60%로 5,375.36, 코스닥은 5%대 올랐어요.",
+      "src": [
+        { "t": "한국경제", "u": "https://www.hankyung.com/article/2026111106306" },
+        { "t": "MTN", "u": "https://news.mtn.co.kr/article/2026111115573998013" }
+      ]
+    },
+    {
+      "kr": "2026-11-17",
+      "cat": "시장",
+      "imp": 3,
+      "t": "코스피 5,000선 아래로",
+      "x": "AI·반도체 매도가 이어지며 코스피가 4,968.48로 마쳤어요. 11일부터 4거래일 동안 7.57% 내렸어요.",
+      "src": [
+        { "t": "톱스타뉴스", "u": "https://www.topstarnews.net/news/articleView.html?idxno=16279036" },
+        { "t": "경북매일", "u": "https://kbmaeil.com/article/20261117500687" }
+      ]
+    },
+    {
+      "kr": "2026-11-19",
+      "us": "2026-11-18",
+      "cat": "금리",
+      "imp": 2,
+      "t": "FOMC 의사록 공개",
+      "x": "10월 회의 의사록이 나왔어요. 대부분 12월 0.25%p 인상을 내다봤고, 두어 명은 더 큰 인상도 꺼냈어요.",
+      "src": [
+        { "t": "미국 연준", "u": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261118a.htm" },
+        { "t": "AP(Advisor.ca 게재)", "u": "https://www.advisor.ca/economy/economic-indicators/fed-minutes-point-to-need-for-higher-interest-rates/" }
+      ]
+    },
+    {
+      "kr": "2026-11-26",
+      "cat": "금리",
+      "imp": 3,
+      "t": "한은 기준금리 인상",
+      "x": "연 3.00%에서 3.25%로 0.25%p 올렸어요. 7·8월에 이어 올해 세 번째 인상이에요.",
+      "src": [
+        { "t": "뉴스1", "u": "https://www.news1.kr/economy/trend/6366779" },
+        { "t": "한국금융신문", "u": "https://www.fntimes.com/html/view.php?ud=202611261110132637179ad43907_18" }
+      ]
+    }
+  ]
+}

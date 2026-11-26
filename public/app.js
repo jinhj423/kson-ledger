@@ -1,5 +1,21 @@
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const root = document.documentElement;
+  const dark = () => root.dataset.theme === 'dark';
+
+  // Light / dark: the device setting until the reader picks one; the pick stays in this browser only.
+  const toggle = document.querySelector('[data-theme-toggle]');
+  const label = () => toggle && toggle.setAttribute('aria-label', dark() ? '밝은 화면으로 바꾸기' : '어두운 화면으로 바꾸기');
+  label();
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      root.dataset.theme = dark() ? 'light' : 'dark';
+      try { localStorage.setItem('theme', root.dataset.theme); } catch { /* storage may be blocked */ }
+      label();
+      document.querySelectorAll('[data-tv]').forEach((b) => { delete b.dataset.done; });
+      initTV(document);
+    });
+  }
 
   // Big number counts up once on load.
   document.querySelectorAll('[data-count]').forEach((el) => {
@@ -18,36 +34,79 @@
     requestAnimationFrame(step);
   });
 
-  // Net-buy bars: pointer picks the day under it.
-  const initLine = (root) => root.querySelectorAll('.chart').forEach((box) => {
-    const pts = JSON.parse(box.dataset.pts || '[]');
-    if (!pts.length) return;
-    const bars = box.querySelectorAll('.bar');
-    const tip = box.querySelector('.tip');
-    const hit = box.querySelector('.hit');
+  document.querySelectorAll('.chart').forEach((ch) => {
+    const plot = ch.querySelector('.plot');
+    const bars = ch.querySelectorAll('.bar');
+    const pts = JSON.parse(plot.dataset.pts || '[]');
+    const tip = plot.querySelector('.tip');
+    const hit = plot.querySelector('.hit');
+    const mark = (i) => {
+      ch.classList.toggle('focus', i != null);
+      bars.forEach((b) => b.classList.toggle('hl', i != null && +b.dataset.i === i));
+    };
+
+    // Bars: pointer picks the day under it.
     const show = (x) => {
       const r = hit.getBoundingClientRect();
       const i = Math.max(0, Math.min(pts.length - 1, Math.floor(((x - r.left) / r.width) * pts.length)));
       const p = pts[i];
-      bars.forEach((b, j) => b.classList.toggle('hl', j === i));
-      tip.style.left = `${p.x}%`;
+      const px = ((i + 0.5) / pts.length) * 100;
+      tip.style.left = `${px}%`;
       tip.style.top = `${p.top}px`;
       tip.querySelector('span').textContent = p.d;
       tip.querySelector('b').textContent = `순매수 ${p.t}`;
       tip.querySelector('small').textContent = p.s || '';
-      tip.dataset.side = p.x > 80 ? 'l' : p.x < 20 ? 'r' : 'c';
-      box.classList.add('on');
+      tip.dataset.side = px > 80 ? 'l' : px < 20 ? 'r' : 'c';
+      plot.classList.add('on');
+      mark(i);
     };
     hit.addEventListener('pointermove', (e) => show(e.clientX));
     hit.addEventListener('pointerdown', (e) => show(e.clientX));
-    hit.addEventListener('pointerleave', () => {
-      box.classList.remove('on');
-      bars.forEach((b) => b.classList.remove('hl'));
+    hit.addEventListener('pointerleave', () => { plot.classList.remove('on'); mark(null); });
+
+    // Event dots: one open at a time, stem grows up or down, card stays inside the screen.
+    const evs = [...ch.querySelectorAll('.ev')];
+    let pinned = null;
+    const open = (ev) => {
+      evs.forEach((x) => {
+        const on = x === ev;
+        x.classList.toggle('open', on);
+        x.querySelector('.dot').setAttribute('aria-expanded', String(on));
+      });
+      mark(ev ? +ev.dataset.i : null);
+      if (!ev) return;
+      const card = ev.querySelector('.evc');
+      card.style.left = '0px';
+      const w = card.offsetWidth;
+      const anchor = ev.getBoundingClientRect().left;
+      const box = ch.getBoundingClientRect();
+      const minL = Math.max(box.left, 12);
+      const maxR = Math.min(box.right, innerWidth - 12);
+      let left = anchor - w / 2;
+      left = Math.max(minL, Math.min(left, maxR - w));
+      card.style.left = `${Math.round(left - anchor)}px`;
+    };
+    evs.forEach((ev) => {
+      const dot = ev.querySelector('.dot');
+      dot.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && !pinned) open(ev); });
+      ev.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !pinned) open(null); });
+      dot.addEventListener('click', () => {
+        pinned = pinned === ev ? null : ev;
+        open(pinned);
+      });
+      dot.addEventListener('focus', () => { if (!pinned) open(ev); });
+      dot.addEventListener('blur', () => { if (!pinned) open(null); });
+    });
+    document.addEventListener('click', (e) => {
+      if (pinned && !e.target.closest('.ev')) { pinned = null; open(null); }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && evs.some((x) => x.classList.contains('open'))) { pinned = null; open(null); }
     });
   });
 
   // Reported-price dots: pointer picks the nearest dot.
-  const initDots = (root) => root.querySelectorAll('.dotc').forEach((box) => {
+  const initDots = (scope) => scope.querySelectorAll('.dotc').forEach((box) => {
     const pts = JSON.parse(box.dataset.pts || '[]');
     if (!pts.length) return;
     const tip = box.querySelector('.tip');
@@ -81,53 +140,38 @@
     });
   });
 
-  // TradingView price line, loaded only where a chart box is on screen.
-  const initTV = (root) => root.querySelectorAll('[data-tv]').forEach((box) => {
-    if (box.dataset.done) return;
-    box.dataset.done = '1';
-    const { s, n } = JSON.parse(box.dataset.tv);
-    const wrap = box.querySelector('.tradingview-widget-container');
-    wrap.querySelector('.tradingview-widget-container__widget').textContent = '';
-    const sc = document.createElement('script');
-    sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js';
-    sc.async = true;
-    sc.textContent = JSON.stringify({
-      symbols: [[n, `${s}|12M`]], chartOnly: false, autosize: true, width: '100%', height: '100%', locale: 'kr', colorTheme: 'dark',
-      showVolume: false, showMA: true, maLength: 200, maLineColor: 'rgba(164,169,178,0.85)', maLineWidth: 1,
-      hideDateRanges: false, hideMarketStatus: true, hideSymbolLogo: true, scalePosition: 'right', scaleMode: 'Normal',
-      fontFamily: 'Inter, Noto Sans KR, sans-serif', fontSize: '11', noTimeScale: false, valuesTracking: '1',
-      changeMode: 'price-and-percent', chartType: 'line', lineWidth: 2, lineType: 0,
-      color: '#F3F4F6', lineColor: '#F3F4F6', upColor: '#F3F4F6', downColor: '#F3F4F6',
-      dateRanges: ['3m|1D', '12m|1D', '60m|1W'], backgroundColor: '#0F1115', gridLineColor: 'rgba(255,255,255,0)',
-      fontColor: '#A4A9B2', widgetFontColor: '#F3F4F6',
+  // TradingView price line, drawn in the current light or dark colours.
+  function initTV(scope) {
+    scope.querySelectorAll('[data-tv]').forEach((box) => {
+      if (box.dataset.done) return;
+      box.dataset.done = '1';
+      const { s, n } = JSON.parse(box.dataset.tv);
+      const d = dark();
+      const wrap = box.querySelector('.tradingview-widget-container');
+      wrap.querySelectorAll('script').forEach((x) => x.remove());
+      wrap.querySelector('.tradingview-widget-container__widget').textContent = '';
+      const line = d ? '#ECEDEF' : '#0E1116';
+      const sc = document.createElement('script');
+      sc.src = 'https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js';
+      sc.async = true;
+      sc.textContent = JSON.stringify({
+        symbols: [[n, `${s}|12M`]], chartOnly: false, autosize: true, width: '100%', height: '100%', locale: 'kr', colorTheme: d ? 'dark' : 'light',
+        showVolume: false, showMA: true, maLength: 200, maLineColor: d ? 'rgba(163,168,177,0.85)' : 'rgba(110,117,129,0.85)', maLineWidth: 1,
+        hideDateRanges: false, hideMarketStatus: true, hideSymbolLogo: true, scalePosition: 'right', scaleMode: 'Normal',
+        fontFamily: 'Pretendard, sans-serif', fontSize: '11', noTimeScale: false, valuesTracking: '1',
+        changeMode: 'price-and-percent', chartType: 'line', lineWidth: 2, lineType: 0,
+        color: line, lineColor: line, upColor: line, downColor: line,
+        dateRanges: ['3m|1D', '12m|1D', '60m|1W'], backgroundColor: d ? '#0C0D10' : '#FFFFFF', gridLineColor: 'rgba(0,0,0,0)',
+        fontColor: d ? '#A3A8B1' : '#4B5260', widgetFontColor: d ? '#ECEDEF' : '#0E1116',
+      });
+      wrap.appendChild(sc);
     });
-    wrap.appendChild(sc);
-  });
-
-  // Home: show only as many feed rows as fit beside the right column, so both columns end together.
-  const main = document.querySelector('.col-main > .card.lg');
-  const side = document.querySelector('.col-side');
-  if (main && side) {
-    const rows = [...main.querySelectorAll(':scope > .row')];
-    const more = main.querySelector(':scope > .more');
-    const fit = () => {
-      rows.forEach((r) => { r.hidden = false; });
-      const stacked = side.getBoundingClientRect().top > main.getBoundingClientRect().top + 4;
-      if (stacked) { rows.slice(10).forEach((r) => { r.hidden = true; }); return; }
-      const limit = side.lastElementChild.getBoundingClientRect().bottom;
-      const tail = (more ? more.offsetHeight + 20 : 0) + 22;
-      let i = rows.length;
-      while (i > 8 && rows[i - 1].getBoundingClientRect().bottom + tail > limit) rows[--i].hidden = true;
-    };
-    fit();
-    let t;
-    addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fit, 120); });
   }
 
-  const init = (root) => { initLine(root); initDots(root); initTV(root); };
+  const init = (scope) => { initDots(scope); initTV(scope); };
   init(document);
 
-  // Tapping a company row opens its chart in a sheet; the row stays a normal link without JS.
+  // Tapping a company name opens its chart in a sheet; it stays a normal link without JS.
   const dlg = document.createElement('dialog');
   dlg.className = 'pop';
   dlg.setAttribute('aria-labelledby', 'pop-t');
@@ -156,14 +200,6 @@
     });
     dlg.addEventListener('close', () => { dlg.innerHTML = ''; });
   }
-
-  // Tabs (ranking 많이 산 / 많이 판).
-  document.querySelectorAll('[data-tabs]').forEach((g) => {
-    g.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
-      g.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-      g.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== b.dataset.tab; });
-    }));
-  });
 
   // Search suggestions.
   const input = document.getElementById('q');

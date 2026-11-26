@@ -1,3 +1,4 @@
+import EVENTS from './events.json';
 import { company, feed, home, notFound, pop, rank, search, textPage } from './pages.js';
 
 const HTML = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=60' };
@@ -33,8 +34,8 @@ export default {
       return Response.redirect(`${url.origin}${p}/${url.search}`, 301);
     }
     const pk = url.searchParams.get('p') === '2w' ? '2w' : '1m';
-    if (p === '/') return page(home(e, 'kr', await data(env, 'kr.json'), pk));
-    if (p === '/us/') return page(home(e, 'us', await data(env, 'us.json'), pk));
+    if (p === '/') return page(home(e, 'kr', await data(env, 'kr.json'), pk, EVENTS.items));
+    if (p === '/us/') return page(home(e, 'us', await data(env, 'us.json'), pk, EVENTS.items));
     if (p === '/feed/') return page(feed(e, 'kr', await data(env, 'kr.json'), url.searchParams.get('t')));
     if (p === '/us/feed/') return page(feed(e, 'us', await data(env, 'us.json'), url.searchParams.get('t')));
     if (p === '/rank/') return page(rank(e, 'kr', await data(env, 'kr.json'), pk));
