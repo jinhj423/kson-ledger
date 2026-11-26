@@ -1,4 +1,4 @@
-import { chart, dayLabel, esc, feedRow, layout, priceSection, rankRows, SITE, xLabels } from './ui.js';
+import { chart, dayLabel, esc, eventRow, feedRow, layout, prevNetText, priceSection, rankRows, SITE, xLabels } from './ui.js';
 
 const MKNAME = { kr: '한국', us: '미국' };
 const PER = [['2w', '2주'], ['1m', '1달']];
@@ -38,7 +38,7 @@ export function home(env, mk, s, pk = '1m') {
   const feedHref = mk === 'kr' ? '/feed/' : '/us/feed/';
   const rankHref = mk === 'kr' ? '/rank/' : '/us/rank/';
   const chip = w.hasPrev
-    ? `<span class="chip ${w.diffUp ? 'up' : 'dn'}">그 전 ${label}보다 ${esc(w.diffTxt)} ${w.diffUp ? '늘었어요' : '줄었어요'}</span>`
+    ? `<span class="chip ${w.diffUp ? 'up' : 'dn'}">그 전 ${label} ${esc(prevNetText(mk, w))}에서 ${esc(w.diffTxt)} ${w.diffUp ? '늘었어요' : '줄었어요'}</span>`
     : '';
   const glow = `<section class="hero wrap">
 <div class="hh"><p class="lead">최근 ${label} ${mk === 'us' ? '미국 ' : ''}내부자 순매수, ${dayLabel(w.from)}부터 ${dayLabel(w.to)}까지</p>${periodSeg(s, pk, path)}</div>
@@ -46,7 +46,7 @@ ${bigNumber(mk, w)}
 ${chip}
 ${chart(P.series)}
 ${xLabels(P.series)}
-<p class="note">하루마다 내부자가 장내에서 산 금액에서 판 금액을 뺐어요(보고일 기준). 선 위에 마우스를 올리면 그날 금액이 보여요.</p>
+<p class="note">막대 하나가 하루예요. 내부자가 장내에서 산 금액에서 판 금액을 뺐어요(보고일 기준). 막대를 누르거나 마우스를 올리면 그날 금액과 보고 건수가 보여요.</p>
 </section>`;
 
   const chips = mk === 'kr'
@@ -58,27 +58,33 @@ ${xLabels(P.series)}
   const many = c && c.dayCounts.length > 7;
   const cluster = c
     ? `<section class="card md cluster">
-<div class="faces" aria-hidden="true">${c.people.slice(0, 5).map((p) => `<span>${esc((p.who || '?').charAt(0))}</span>`).join('')}</div>
 <h2>${esc(c.co)} 내부자 ${c.n}명이 최근 ${label} 동안 샀어요</h2>
 <p class="muted">장내매수 합계 ${esc(c.amt)}${mk === 'us' ? '' : '원'}</p>
+<ul class="ppl">${c.people.slice(0, 4).map((p) => `<li><b>${esc(p.who || '이름 없음')}</b><span>${esc(p.role || '')}</span></li>`).join('')}${c.people.length > 4 ? `<li class="more-n">외 ${c.people.length - 4}명</li>` : ''}</ul>
 <div class="bars${many ? ' many' : ''}">${c.dayCounts.map((n, i, a) => `<span${n ? ` title="${esc(w.days[i] || '')} ${n}명"` : ''}><em>${n && !many ? `${n}명` : ''}</em><i style="height:${Math.round((n / Math.max(...a, 1)) * 44) || 2}px"></i><small>${esc(many ? (i === 0 || i === a.length - 1 ? w.days[i] || '' : '') : w.dows[i] || '')}</small></span>`).join('')}</div>
 <a class="more" href="${esc(c.link)}">${esc(c.co)} 기록 보기</a>
 ${P.clusters.length > 1 ? `<a class="more ghost" href="${rankHref}${pk === '1m' ? '' : `?p=${pk}`}#cluster">여럿이 같이 산 회사 ${P.clusters.length}곳 모두 보기</a>` : ''}
 </section>`
     : '';
 
-  const before = (n) => (w.hasPrev ? `그 전 ${label} ${n}건` : `최근 ${label} 합계`);
-  const body = `<div class="stats">
-<div class="stat"><p>장내매수 보고</p><b>${w.buyN}<small>건</small></b><span>${before(w.prevBuyN)}</span></div>
-<div class="stat"><p>장내매도 보고</p><b>${w.sellN}<small>건</small></b><span>${before(w.prevSellN)}</span></div>
-<div class="stat"><p>여럿이 같이 산 회사</p><b>${w.clusterN}<small>곳</small></b><span>같은 기간 내부자 3명 이상</span></div>
-</div>
+  const before = (n, now) => {
+    if (!w.hasPrev) return `최근 ${label} 합계`;
+    const d = now - n;
+    return `그 전 ${label}보다 ${d === 0 ? '같아요' : `${Math.abs(d)}건 ${d > 0 ? '많아요' : '적어요'}`}`;
+  };
+  const cells = [
+    ['장내매수 보고', w.buyN, '건', before(w.prevBuyN, w.buyN)],
+    ['장내매도 보고', w.sellN, '건', before(w.prevSellN, w.sellN)],
+    ['여럿이 같이 산 회사', w.clusterN, '곳', '내부자 3명 이상이 산 곳'],
+  ];
+  if (mk === 'kr' && w.majorN != null) cells.push(['5% 보유 보고', w.majorN, '건', '지분 5% 이상 보유자의 보고']);
+  const body = `<div class="strip" style="--n:${cells.length}">${cells.map(([l, v, u, s2]) => `<div class="cell"><p>${l}</p><b>${Number(v).toLocaleString('ko-KR')}<small>${u}</small></b><span>${esc(s2)}</span></div>`).join('')}</div>
 <div class="cols">
 <div class="col-main">
 <section class="card lg">
 <div class="ch"><h2>실시간 공시</h2><span class="muted">${s.updated ? `${esc(s.updated.slice(5, 10).replace('-', '.'))} ${esc(s.updated.slice(11, 16))} 업데이트` : ''}</span></div>
 <div class="fchips">${chipHtml}</div>
-${s.feed.slice(0, 10).map(feedRow).join('')}
+${s.feed.slice(0, 16).map(feedRow).join('')}
 <a class="more" href="${feedHref}">공시 더 보기</a>
 </section>
 </div>
@@ -146,10 +152,6 @@ export function rank(env, mk, s, pk = '1m') {
   return layout(env, { title: `${MKNAME[mk]} 내부자 순매수 랭킹`, desc: `최근 ${label} ${MKNAME[mk]} 내부자 순매수·순매도 상위 회사.`, path: path + (pk === '1m' ? '' : `?p=${pk}`), mk, active: 'rank', body });
 }
 
-function eventRow(r) {
-  return `<div class="row"><span class="av" aria-hidden="true">${esc(r.w || r.i)}</span><span class="rm"><span class="sb strong">${esc(r.sub)}</span><a class="src" href="${esc(r.url)}" rel="noopener" target="_blank">원문 보기</a></span><span class="ra"><span class="am">${esc(r.amt)}</span><span class="dv ${esc(r.dk)}">${esc(r.d)}</span></span></div>`;
-}
-
 const chartCard = (c, mk) => (c.tv || (c.price && c.price.pts && c.price.pts.length)
   ? `<section class="card lg page"><div class="ch"><h2>주가와 내부자 거래 단가</h2></div>${priceSection(c, mk)}</section>`
   : '');
@@ -190,7 +192,12 @@ export function company(env, mk, c) {
 <p class="lead">${esc(c.cls)}${c.cls ? ', ' : ''}최근 90일 내부자 장내거래</p>
 <h1 class="co">${esc(c.co)}</h1>
 <p class="big sm ${sign}">${esc(c.net)}<span class="unit">${mk === 'kr' ? '원' : ''}</span></p>
-<p class="note">산 금액 ${esc(c.buy)}${mk === 'kr' ? '원' : ''}, 판 금액 ${esc(c.sell)}${mk === 'kr' ? '원' : ''}, 거래한 내부자 ${c.people}명</p>
+<div class="strip mini" style="--n:4">
+<div class="cell"><p>산 금액</p><b class="up">${esc(c.buy)}<small>${mk === 'kr' ? '원' : ''}</small></b></div>
+<div class="cell"><p>판 금액</p><b class="dn">${esc(c.sell)}<small>${mk === 'kr' ? '원' : ''}</small></b></div>
+<div class="cell"><p>거래한 내부자</p><b>${c.people}<small>명</small></b></div>
+<div class="cell"><p>공시</p><b>${c.count}<small>건</small></b></div>
+</div>
 </section>`;
   const body = `${chartCard(c, mk)}<section class="card lg page"><div class="ch"><h2>공시 기록</h2><span class="muted">${c.count}건</span></div>${list}${extra}</section>`;
   return layout(env, {

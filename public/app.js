@@ -18,28 +18,32 @@
     requestAnimationFrame(step);
   });
 
-  // Net-buy chart: pointer shows the day under it.
+  // Net-buy bars: pointer picks the day under it.
   const initLine = (root) => root.querySelectorAll('.chart').forEach((box) => {
     const pts = JSON.parse(box.dataset.pts || '[]');
     if (!pts.length) return;
-    const cur = box.querySelector('.cur');
-    const dot = box.querySelector('.dot');
+    const bars = box.querySelectorAll('.bar');
     const tip = box.querySelector('.tip');
     const hit = box.querySelector('.hit');
     const show = (x) => {
       const r = hit.getBoundingClientRect();
-      const p = pts[Math.round(Math.max(0, Math.min(1, (x - r.left) / r.width)) * (pts.length - 1))];
-      cur.style.left = dot.style.left = tip.style.left = `${p.x}%`;
-      dot.style.top = `${p.y}px`;
-      dot.className = `dot ${p.up ? 'up' : 'dn'}`;
+      const i = Math.max(0, Math.min(pts.length - 1, Math.floor(((x - r.left) / r.width) * pts.length)));
+      const p = pts[i];
+      bars.forEach((b, j) => b.classList.toggle('hl', j === i));
+      tip.style.left = `${p.x}%`;
+      tip.style.top = `${p.top}px`;
       tip.querySelector('span').textContent = p.d;
       tip.querySelector('b').textContent = `순매수 ${p.t}`;
-      tip.dataset.side = p.x > 75 ? 'l' : p.x < 25 ? 'r' : 'c';
+      tip.querySelector('small').textContent = p.s || '';
+      tip.dataset.side = p.x > 80 ? 'l' : p.x < 20 ? 'r' : 'c';
       box.classList.add('on');
     };
     hit.addEventListener('pointermove', (e) => show(e.clientX));
     hit.addEventListener('pointerdown', (e) => show(e.clientX));
-    hit.addEventListener('pointerleave', () => box.classList.remove('on'));
+    hit.addEventListener('pointerleave', () => {
+      box.classList.remove('on');
+      bars.forEach((b) => b.classList.remove('hl'));
+    });
   });
 
   // Reported-price dots: pointer picks the nearest dot.
@@ -99,6 +103,26 @@
     });
     wrap.appendChild(sc);
   });
+
+  // Home: show only as many feed rows as fit beside the right column, so both columns end together.
+  const main = document.querySelector('.col-main > .card.lg');
+  const side = document.querySelector('.col-side');
+  if (main && side) {
+    const rows = [...main.querySelectorAll(':scope > .row')];
+    const more = main.querySelector(':scope > .more');
+    const fit = () => {
+      rows.forEach((r) => { r.hidden = false; });
+      const stacked = side.getBoundingClientRect().top > main.getBoundingClientRect().top + 4;
+      if (stacked) { rows.slice(10).forEach((r) => { r.hidden = true; }); return; }
+      const limit = side.lastElementChild.getBoundingClientRect().bottom;
+      const tail = (more ? more.offsetHeight + 20 : 0) + 22;
+      let i = rows.length;
+      while (i > 8 && rows[i - 1].getBoundingClientRect().bottom + tail > limit) rows[--i].hidden = true;
+    };
+    fit();
+    let t;
+    addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fit, 120); });
+  }
 
   const init = (root) => { initLine(root); initDots(root); initTV(root); };
   init(document);

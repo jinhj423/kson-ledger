@@ -75,53 +75,99 @@ ${footer(env)}
 </html>`;
 }
 
+// "+353억", "−1.2조", "+$103.9B" -> size in 억 (kr) or $M (us), for bar lengths.
+const SCALE = { 조: 10000, 억: 1, 만: 0.0001, B: 1000, M: 1, K: 0.001 };
+export function magnitude(s) {
+  const m = String(s ?? '').replace(/,/g, '').match(/([\d.]+)\s*(조|억|만|B|M|K)?/);
+  if (!m) return 0;
+  return +(parseFloat(m[1]) * (SCALE[m[2]] ?? 1)).toPrecision(6);
+}
+
+export function netText(mk, v) {
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+  let a = Math.abs(v);
+  if (mk === 'us') {
+    const unit = a >= 1000 ? 'B' : 'M';
+    if (unit === 'B') a /= 1000;
+    return `${sign}$${a.toFixed(1)}${unit}`;
+  }
+  if (a >= 10000) return `${sign}${(a / 10000).toFixed(1)}조`;
+  return `${sign}${a >= 100 ? Math.round(a).toLocaleString('ko-KR') : a.toFixed(1)}억`;
+}
+
+// The earlier period's total, rebuilt from this period's total and the change.
+export function prevNetText(mk, w) {
+  const diff = magnitude(w.diffTxt);
+  return netText(mk, w.diffUp ? w.net - diff : w.net + diff);
+}
+
+const KINDS = { buy: '장내매수', sell: '장내매도', mixed: '매수와 매도', major: '5% 보고', buyback: '자사주', control: '최대주주 변경', other: '소유 변동' };
+export function kindLabel(r) {
+  const tone = r.dk === 'buy' || r.dk === 'sell' ? r.dk : '';
+  return [KINDS[r.kind] || '공시', tone];
+}
+
+// One feed / company-record line. Amount on the right, report type under it, share change in the sentence.
+function rowParts(r, { lead, name = '', subCls = 'sb', after = '' }) {
+  const [kl, tone] = kindLabel(r);
+  const pp = /%p$/.test(r.d || '') && !/^[+\-−]?0\.00%p$/.test(r.d) ? `, 지분 ${r.d}` : '';
+  const t = tone ? ` ${tone}` : '';
+  return `<span class="av${t}" aria-hidden="true">${esc(lead)}</span>
+<span class="rm">${name}<span class="${subCls}">${esc(r.sub)}${esc(pp)}${after}</span></span>
+<span class="ra"><span class="am">${esc(r.amt)}</span><span class="dv${t}">${kl}</span></span>`;
+}
+
 export function feedRow(r) {
-  const time = r.time ? `, ${esc(r.time)}` : '';
-  const inner = `<span class="av" aria-hidden="true">${esc(r.i)}</span>
-<span class="rm"><span class="nm">${esc(r.co)}</span><span class="sb">${esc(r.sub)}${time}</span></span>
-<span class="ra"><span class="am">${esc(r.amt)}</span><span class="dv ${esc(r.dk)}">${esc(r.d)}</span></span>`;
+  const inner = rowParts(r, { lead: r.i, name: `<span class="nm">${esc(r.co)}</span>` });
   return r.link ? `<a class="row" href="${esc(r.link)}" data-pop>${inner}</a>` : `<div class="row">${inner}</div>`;
+}
+
+// Company record line: the sentence is the headline, with a link to the filing.
+export function eventRow(r) {
+  const after = ` <a class="src" href="${esc(r.url)}" rel="noopener" target="_blank">원문</a>`;
+  return `<div class="row ev">${rowParts(r, { lead: r.w || r.i, subCls: 'sb strong', after })}</div>`;
 }
 
 export function rankRows(rows, cls) {
   if (!rows.length) return '<p class="empty">아직 해당하는 회사가 없어요.</p>';
+  const top = Math.max(...rows.map((k) => magnitude(k.v)), 1e-9);
   return rows
-    .map((k) => `<a class="rrow" href="${esc(k.link)}" data-pop><span class="rn${k.n <= 3 ? ' top' : ''}">${k.n}</span><span class="av sm" aria-hidden="true">${esc(k.i)}</span><span class="rm"><span class="nm">${esc(k.co)}</span><span class="sb">${esc(k.sub)}</span></span><span class="rv ${cls}">${esc(k.v)}</span></a>`)
+    .map((k) => {
+      const w = Math.max(2, Math.round((magnitude(k.v) / top) * 100));
+      return `<a class="rrow" href="${esc(k.link)}" data-pop><span class="rn${k.n <= 3 ? ' top' : ''}">${k.n}</span><span class="rm"><span class="nm">${esc(k.co)}</span><span class="sb">${esc(k.sub)}</span></span><span class="rx"><span class="rv ${cls}">${esc(k.v)}</span><span class="mb ${cls}" aria-hidden="true"><i style="width:${w}%"></i></span></span></a>`;
+    })
     .join('');
 }
 
-// Smooth line + area split at zero (SVG viewBox 1000 x H, stretched horizontally).
+// Daily net-buy bars around a zero line: one bar per reporting day, red above, blue below.
 export function chart(series, H = 240) {
   const vs = series.map((s) => s.v);
   let max = Math.max(0, ...vs);
   let min = Math.min(0, ...vs);
   if (max === min) { max += 1; min -= 1; }
-  const pad = 18;
+  const pad = 10;
   const n = vs.length;
-  const X = (i) => (n > 1 ? (i / (n - 1)) * 1000 : 500);
   const Y = (v) => pad + ((max - v) / (max - min)) * (H - pad * 2);
-  const P = vs.map((v, i) => [X(i), Y(v)]);
-  const f = (x) => x.toFixed(1);
-  let d = `M${f(P[0][0])},${f(P[0][1])}`;
-  for (let i = 0; i < n - 1; i++) {
-    const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2;
-    d += ` C${f(p1[0] + (p2[0] - p0[0]) / 6)},${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)},${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])},${f(p2[1])}`;
-  }
   const zy = Y(0);
-  const pts = series.map((s, i) => ({ x: +(X(i) / 10).toFixed(2), y: +P[i][1].toFixed(1), d: s.d, t: s.txt, up: s.v >= 0 }));
-  const last = pts[pts.length - 1];
-  return `<div class="chart" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}">
-<svg class="reveal" role="img" aria-label="최근 ${n}거래일 하루 순매수 금액" viewBox="0 0 1000 ${H}" preserveAspectRatio="none">
-<defs><clipPath id="cu"><rect x="0" y="-20" width="1000" height="${f(zy + 20)}"/></clipPath><clipPath id="cd"><rect x="0" y="${f(zy)}" width="1000" height="${H + 20}"/></clipPath></defs>
-<line class="zero" x1="0" y1="${f(zy)}" x2="1000" y2="${f(zy)}"/>
-<path class="a-up" d="${d} L1000,${f(zy)} L0,${f(zy)} Z" clip-path="url(#cu)"/>
-<path class="a-dn" d="${d} L1000,${f(zy)} L0,${f(zy)} Z" clip-path="url(#cd)"/>
-<path class="l-up" d="${d}" clip-path="url(#cu)"/>
-<path class="l-dn" d="${d}" clip-path="url(#cd)"/>
-</svg>
-<div class="cur" aria-hidden="true"></div>
-<div class="dot ${last.up ? 'up' : 'dn'}" style="left:${last.x}%;top:${last.y}px" aria-hidden="true"></div>
-<div class="tip" aria-hidden="true"><span></span><b></b></div>
+  const step = 100 / n;
+  const f = (x) => x.toFixed(2);
+  const pts = series.map((s, i) => {
+    const y = Y(s.v);
+    return {
+      x: +f(step * (i + 0.5)), top: +Math.min(y, zy).toFixed(1), h: +Math.max(2, Math.abs(zy - y)).toFixed(1),
+      d: s.d, t: s.txt, up: s.v >= 0, s: s.buyN != null ? `산 보고 ${s.buyN}건, 판 보고 ${s.sellN}건` : '',
+    };
+  });
+  const bars = pts.map((p, i) => `<span class="bar ${p.up ? 'up' : 'dn'}" style="left:${f(step * i)}%;width:${f(step)}%;top:${p.top}px;height:${p.h}px"></span>`).join('');
+  const hiTxt = series.reduce((a, s) => (s.v > a.v ? s : a), series[0]);
+  const loTxt = series.reduce((a, s) => (s.v < a.v ? s : a), series[0]);
+  const yl = [hiTxt.v > 0 ? `<span class="yl" style="top:${Y(hiTxt.v).toFixed(1)}px">${esc(hiTxt.txt)}</span>` : '',
+    loTxt.v < 0 ? `<span class="yl" style="top:${Y(loTxt.v).toFixed(1)}px">${esc(loTxt.txt)}</span>` : ''].join('');
+  return `<div class="chart" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}" role="img" aria-label="최근 ${n}거래일 하루 순매수 금액, 가장 많이 산 날 ${esc(hiTxt.txt)}, 가장 많이 판 날 ${esc(loTxt.txt)}">
+<div class="bars-in reveal">${bars}</div>
+<span class="zero" style="top:${zy.toFixed(1)}px" aria-hidden="true"></span>
+${yl}
+<div class="tip" aria-hidden="true"><span></span><b></b><small></small></div>
 <div class="hit"></div>
 </div>`;
 }
@@ -132,7 +178,7 @@ export function xLabels(series) {
   const idx = [...new Set([0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round((3 * (n - 1)) / 4), n - 1])];
   return `<div class="xl" aria-hidden="true">${idx
     .map((i) => {
-      const x = n > 1 ? (i / (n - 1)) * 100 : 50;
+      const x = ((i + 0.5) / n) * 100;
       const al = i === 0 ? 'left:0' : i === n - 1 ? 'right:0' : `left:${x.toFixed(2)}%;transform:translateX(-50%)`;
       return `<span style="${al}">${esc(series[i].d.slice(0, 5))}</span>`;
     })
@@ -149,9 +195,9 @@ function tvBlock(c) {
   if (c.tv.startsWith('KRX:')) {
     // TradingView does not allow Korea Exchange symbols inside embedded widgets.
     const code = c.tv.slice(4);
-    return `<div class="tvlink"><p>한국 종목 주가 차트는 다른 사이트에서 열려요.</p>
-<div><a class="more ghost" href="https://finance.naver.com/item/main.naver?code=${encodeURIComponent(code)}" rel="noopener nofollow" target="_blank">네이버 증권에서 주가 보기</a>
-<a class="more ghost" href="${page}" rel="noopener nofollow" target="_blank">TradingView에서 주가 보기</a></div></div>`;
+    return `<div class="tvlink"><p>주가 차트는 다른 사이트에서 열려요</p>
+<a class="pill" href="https://finance.naver.com/item/main.naver?code=${encodeURIComponent(code)}" rel="noopener nofollow" target="_blank">네이버 증권</a>
+<a class="pill" href="${page}" rel="noopener nofollow" target="_blank">TradingView</a></div>`;
   }
   return `<div class="tvbox" data-tv="${esc(JSON.stringify({ s: c.tv, n: c.co }))}">
 <div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"><p class="muted">주가 차트를 불러오는 중이에요</p></div>
@@ -194,9 +240,14 @@ export function tradeDots(pr, mk) {
   }));
   const dots = pts.map((p) => `<span class="pd ${p.k}" style="left:${p.x}%;top:${p.y}px;width:${p.r * 2}px;height:${p.r * 2}px;margin:-${p.r}px 0 0 -${p.r}px"></span>`).join('');
   const mid = new Date((t0 + t1) / 2).toISOString().slice(0, 10);
+  const pv = pr.pts.map((p) => p.p);
+  const pmax = Math.max(...pv);
+  const pmin = Math.min(...pv);
+  const ys = [`<span class="yl" style="top:${f(Y(pmax))}px">${esc(money(pmax))}</span>`,
+    pmin < pmax ? `<span class="yl" style="top:${f(Y(pmin))}px">${esc(money(pmin))}</span>` : ''].join('');
   return `<div class="dotc" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}" role="img" aria-label="최근 90일 내부자 보고 단가 ${pts.length}건">
 <svg viewBox="0 0 1000 ${H}" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>
-${labels}${dots}
+${labels}${ys}${dots}
 <div class="tip" aria-hidden="true"><span></span><b></b><small></small></div>
 <div class="hit"></div>
 </div>
