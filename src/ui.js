@@ -179,7 +179,7 @@ export function eventsFor(mk, series, events) {
     .sort((a, b) => a.i - b.i);
 }
 
-// Daily net-buy bars around a zero line, with event dots on a rail underneath.
+// Daily net-buy bars around a zero line, with event dots sitting on that line.
 export function chart(series, events = [], H = 200) {
   const vs = series.map((s) => s.v);
   let max = Math.max(0, ...vs);
@@ -206,10 +206,16 @@ export function chart(series, events = [], H = 200) {
   const lo = series.reduce((a, s) => (s.v < a.v ? s : a), series[0]);
   const yl = [hi.v > 0 ? `<span class="yl" style="top:${Y(hi.v).toFixed(1)}px">${esc(hi.txt)}</span>` : '',
     lo.v < 0 ? `<span class="yl" style="top:${Y(lo.v).toFixed(1)}px">${esc(lo.txt)}</span>` : ''].join('');
+  // Dots sit on the zero line; each opens up or down (alternating), flipping when that side has no room.
+  const room = { up: zy - 8, dn: H - zy - 8 };
   const evs = events.map((e, k) => {
     const s = series[e.i];
+    let side = k % 2 ? 'dn' : 'up';
+    const other = side === 'up' ? 'dn' : 'up';
+    if (room[side] < 40 && room[other] > room[side]) side = other;
+    const len = Math.max(18, Math.round(room[side]));
     const src = (e.src || []).map((x) => `<a href="${esc(x.u)}" rel="noopener nofollow" target="_blank">${esc(x.t)}</a>`).join('');
-    return `<div class="ev ${k % 2 ? 'dn' : 'up'} imp${e.imp === 3 ? 3 : 2}" style="left:${f(step * (e.i + 0.5))}%" data-i="${e.i}">
+    return `<div class="ev ${side} imp${e.imp === 3 ? 3 : 2}" style="left:${f(step * (e.i + 0.5))}%;--len:${len}px" data-i="${e.i}">
 <button type="button" class="dot" aria-label="${esc(s.d)} ${esc(e.t)}" aria-expanded="false" aria-controls="ev${k}"></button>
 <span class="stem" aria-hidden="true"></span>
 <div class="evc" id="ev${k}" role="group" aria-label="${esc(e.t)}"><p class="meta"><b>${esc(e.cat)}</b>${esc(s.d)}</p><p class="tt">${esc(e.t)}</p><p class="ex">${esc(e.x)}</p>
@@ -223,8 +229,8 @@ export function chart(series, events = [], H = 200) {
 <div class="plot" style="height:${H}px" data-pts="${esc(JSON.stringify(pts))}" role="img" aria-label="${esc(label)}">
 <div class="bars reveal">${bars}</div><span class="zero" style="top:${zy.toFixed(1)}px" aria-hidden="true"></span>${yl}
 <div class="tip" aria-hidden="true"><span></span><b></b><small></small></div><div class="hit"></div>
+${events.length ? `<div class="rail" style="top:${zy.toFixed(1)}px">${evs}</div>` : ''}
 </div>
-${events.length ? `<div class="rail">${evs}</div>` : '<div class="rail empty"></div>'}
 <div class="xl" aria-hidden="true">${xl}</div>
 </div>`;
 }

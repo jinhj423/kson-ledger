@@ -66,3 +66,24 @@ test('fullMoney writes the whole amount with commas', () => {
   assert.deepEqual(fullMoney('kr', {}, -260.8), { txt: '−26,080,000,000', unit: '원' });
   assert.deepEqual(fullMoney('us', {}, 12.5), { txt: '+$12,500,000', unit: '' });
 });
+
+test('chart puts event dots on the zero line and opens them toward the side with room', async () => {
+  const { chart } = await import('../src/ui.js');
+  const day = (i, v) => ({ d: `11.${String(i + 1).padStart(2, '0')}`, v, txt: `${v}억` });
+  const ev = (i) => ({ i, cat: '금리', imp: 3, t: `e${i}`, x: '', src: [] });
+  const top = (html, re) => Number(html.match(re)[1]);
+
+  // mixed days: zero line in the middle, dots alternate up and down
+  const mixed = chart([day(0, 10), day(1, -10), day(2, 5), day(3, -5)], [ev(0), ev(2)], 200);
+  const zero = top(mixed, /class="zero" style="top:([\d.]+)px"/);
+  assert.equal(top(mixed, /class="rail" style="top:([\d.]+)px"/), zero);
+  assert.ok(!/<\/div>\s*<div class="rail"/.test(mixed.split('class="plot"')[0]), 'rail sits inside the plot');
+  assert.match(mixed, /class="ev up imp3" style="left:12\.50%;--len:\d+px"/);
+  assert.match(mixed, /class="ev dn imp3" style="left:62\.50%;--len:\d+px"/);
+
+  // buying every day: zero line at the bottom, so both dots open upward
+  const allUp = chart([day(0, 10), day(1, 20), day(2, 5), day(3, 8)], [ev(0), ev(1)], 200);
+  assert.equal((allUp.match(/class="ev up /g) || []).length, 2);
+  const len = top(allUp, /--len:(\d+)px/);
+  assert.ok(len > 150, `stem reaches near the top (${len})`);
+});
