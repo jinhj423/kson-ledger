@@ -3,6 +3,18 @@
   "updated": "2026-11-27",
   "items": [
     {
+      "kr": "2026-10-29",
+      "us": "2026-10-28",
+      "cat": "금리",
+      "imp": 2,
+      "t": "FOMC 금리 동결",
+      "x": "연준이 기준금리 목표 범위를 3.75~4.00%로 그대로 뒀어요.",
+      "src": [
+        { "t": "미국 연준 FOMC 성명", "u": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm" },
+        { "t": "BIS 정책금리", "u": "https://data.bis.org/topics/CBPOL" }
+      ]
+    },
+    {
       "kr": "2026-11-06",
       "cat": "시장",
       "imp": 3,
