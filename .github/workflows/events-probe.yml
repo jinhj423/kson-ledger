@@ -1,0 +1,37 @@
+name: events-probe
+on:
+  push:
+    branches: [events-auto]
+    paths: [".github/workflows/events-probe.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: probe
+        run: |
+          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
+          while read -r u; do
+            [ -z "$u" ] && continue
+            echo "=================== $u"
+            curl -sS -L -m 25 -A "$UA" -o /tmp/b -w 'status=%{http_code} size=%{size_download} type=%{content_type}\n' "$u" || true
+            head -c 900 /tmp/b | tr '\n' ' '; echo
+          done <<'L'
+          https://m.stock.naver.com/api/index/KOSPI/price?pageSize=3&page=1
+          https://m.stock.naver.com/api/index/KOSDAQ/price?pageSize=3&page=1
+          https://query1.finance.yahoo.com/v8/finance/chart/%5EKS11?range=5d&interval=1d
+          https://query1.finance.yahoo.com/v8/finance/chart/%5ESOX?range=5d&interval=1d
+          https://api.stock.naver.com/index/.INX/price?page=1&pageSize=3
+          https://api.stock.naver.com/index/.SOX/price?page=1&pageSize=3
+          https://api.stock.naver.com/index/.IXIC/price?page=1&pageSize=3
+          https://stooq.com/q/d/l/?s=%5Espx&i=d
+          https://www.federalreserve.gov/feeds/press_monetary.xml
+          https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFEDTARU&cosd=2026-09-01
+          https://www.bok.or.kr/portal/singl/baseRate/list.do?dataSeCd=01&menuNo=200643
+          https://www.bok.or.kr/portal/bbs/B0000245/list.do?menuNo=200761&searchWrd=%ED%86%B5%ED%99%94%EC%A0%95%EC%B1%85%EB%B0%A9%ED%96%A5&searchCnd=1
+          https://stats.bis.org/api/v1/data/WS_CBPOL/D.KR?startPeriod=2026-10-01&format=csv
+          https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.KR?startPeriod=2026-10-01&format=csv
+          L
+          echo "=================== bok baseRate table rows"
+          curl -sS -L -m 25 -A "$UA" 'https://www.bok.or.kr/portal/singl/baseRate/list.do?dataSeCd=01&menuNo=200643' | grep -o '<td[^>]*>[^<]*</td>' | head -12
