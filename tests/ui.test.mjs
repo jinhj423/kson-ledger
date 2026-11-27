@@ -55,3 +55,14 @@ test('heroSentence says which way insiders leaned', () => {
   assert.equal(heroSentence('us', 12.5), '내부자들이 판 것보다 $12.5M 더 샀어요.');
   assert.equal(heroSentence('kr', 0), '산 금액과 판 금액이 같아요.');
 });
+
+import { fullMoney } from '../src/ui.js';
+
+test('fullMoney writes the whole amount with commas', () => {
+  assert.deepEqual(fullMoney('kr', { netAmt: -26083412345 }, -260.8), { txt: '−26,083,412,345', unit: '원' });
+  assert.deepEqual(fullMoney('kr', { netAmt: 0 }, 0), { txt: '0', unit: '원' });
+  assert.deepEqual(fullMoney('us', { netAmt: 71612345678 }, 71612.3), { txt: '+$71,612,345,678', unit: '' });
+  // older data without the exact field: rebuilt from the rounded total
+  assert.deepEqual(fullMoney('kr', {}, -260.8), { txt: '−26,080,000,000', unit: '원' });
+  assert.deepEqual(fullMoney('us', {}, 12.5), { txt: '+$12,500,000', unit: '' });
+});

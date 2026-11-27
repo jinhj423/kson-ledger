@@ -130,11 +130,14 @@ def test_periods_and_prices():
     one, two = site["p"]["1m"]["w"], site["p"]["2w"]["w"]
     assert one["n"] == 20 and two["n"] == 10 and one["hasPrev"] and site["w"] == one
     assert one["from"] == days[19] and two["from"] == days[9]
+    # exact totals in won for the headline number (20 days x 100,000원)
+    assert one["netAmt"] == 2_000_000 and one["prevNetAmt"] == 2_000_000 and two["netAmt"] == 1_000_000
     # a filing still waiting inside the earlier month: no comparison yet
     site = build_market("kr", evs, out, "2026-11-13T18:00", complete_after=days[25])
     assert not site["p"]["1m"]["w"]["hasPrev"] and site["p"]["2w"]["w"]["hasPrev"]
     c = json.load(open(os.path.join(out, "c", "000001.json"), encoding="utf-8"))
     assert c["tv"] == "KRX:000001"
+    assert c["netAmt"] == 4_500_000 and c["buyAmt"] == 4_500_000 and c["sellAmt"] == 0
     pr = c["price"]
     first = [x for x in pr["pts"] if x["d"] == "2026-11-13"][0]
     assert first["p"] == 1750 and first["q"] == 400  # (100*1000 + 300*2000) / 400, latest row date

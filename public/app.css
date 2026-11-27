@@ -54,10 +54,10 @@ button{font:inherit;color:inherit}
 .hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:72px;padding-top:64px;align-items:start}
 .hero.co{grid-template-columns:minmax(0,1fr);padding-top:56px}
 .k{margin:0 0 20px;font-size:16px;font-weight:600;color:var(--ink2)}
-.big{margin:0;font-size:clamp(76px,10vw,136px);font-weight:800;letter-spacing:-.06em;line-height:.88;font-variant-numeric:tabular-nums}
-.big small{font-size:.33em;letter-spacing:-.03em;margin-left:10px}
-.big.sm{margin-top:14px;font-size:clamp(52px,6.4vw,84px)}
-.big.sm.up{color:var(--upt)}.big.sm.dn{color:var(--dnt)}
+.big{margin:0;font-size:clamp(32px,4.4vw,58px);font-weight:800;letter-spacing:-.035em;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+.big small{font-size:.5em;letter-spacing:-.02em;margin-left:6px}
+.hero.co .big{margin-top:16px}
+.big.up{color:var(--upt)}.big.dn{color:var(--dnt)}
 .coname{margin:0;font-size:clamp(30px,3.6vw,44px);font-weight:800;letter-spacing:-.035em}
 .sent{margin:26px 0 0;max-width:560px;font-size:clamp(18px,1.7vw,22px);font-weight:600;letter-spacing:-.025em;line-height:1.5}
 .seg{display:inline-flex;gap:6px;margin-top:28px}

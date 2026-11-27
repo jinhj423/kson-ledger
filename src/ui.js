@@ -37,6 +37,14 @@ export function prevNetText(mk, w) {
   return netText(mk, w.diffUp ? w.net - diff : w.net + diff);
 }
 
+// Headline amount written out in full: exact total when the data has it, else rebuilt from the rounded one.
+export function fullMoney(mk, o, rounded) {
+  const amt = Number.isFinite(o && o.netAmt) ? o.netAmt : Math.round(rounded * (mk === 'us' ? 1e6 : 1e8));
+  const sign = amt > 0 ? '+' : amt < 0 ? '−' : '';
+  const digits = Math.abs(Math.round(amt)).toLocaleString('en-US');
+  return mk === 'us' ? { txt: `${sign}$${digits}`, unit: '' } : { txt: `${sign}${digits}`, unit: '원' };
+}
+
 export function heroSentence(mk, net) {
   if (!net) return '산 금액과 판 금액이 같아요.';
   const amt = netText(mk, Math.abs(net)).replace(/^\+/, '');

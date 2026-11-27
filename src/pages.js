@@ -1,4 +1,4 @@
-import { chart, dayLabel, esc, eventsFor, feedTable, heroSentence, layout, prevNetText, priceSection, rankTable, recordTable, SITE } from './ui.js';
+import { chart, dayLabel, esc, eventsFor, feedTable, fullMoney, heroSentence, layout, prevNetText, priceSection, rankTable, recordTable, SITE } from './ui.js';
 
 const MKNAME = { kr: '한국', us: '미국' };
 const PER = [['2w', '2주'], ['1m', '1달']];
@@ -14,16 +14,13 @@ function periodSeg(s, pk, base) {
   return `<nav class="seg" aria-label="기간">${PER.map(([k, l]) => `<a href="${base}${k === '1m' ? '' : `?p=${k}`}"${k === pk ? ' class="on" aria-current="true"' : ''}>${l}</a>`).join('')}</nav>`;
 }
 
-function bigNumber(mk, w) {
-  let v = Math.abs(w.net);
-  let unit = mk === 'us' ? 'M' : '억원';
-  if (mk === 'us' && v >= 1000) { v = Math.round(v / 100) / 10; unit = 'B'; }
-  if (mk === 'kr' && v >= 10000) { v = Math.round(v / 1000) / 10; unit = '조원'; }
-  const dec = v >= 100 ? 0 : 1;
-  const sign = w.net > 0 ? '+' : w.net < 0 ? '−' : '';
-  const pre = sign + (mk === 'us' ? '$' : '');
-  const shown = pre + v.toLocaleString('ko-KR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-  return `<p class="big"><span data-count="${v}" data-dec="${dec}" data-pre="${esc(pre)}">${esc(shown)}</span><small>${unit}</small></p>`;
+// Headline total written out to the last won (or dollar), counting up once on load.
+function bigNumber(mk, o, rounded, cls = '') {
+  const { txt, unit } = fullMoney(mk, o, rounded);
+  const m = txt.match(/^([+−]?\$?)([\d,]+)$/);
+  const pre = m ? m[1] : '';
+  const v = m ? Number(m[2].replace(/,/g, '')) : 0;
+  return `<p class="big${cls ? ` ${cls}` : ''}"><span data-count="${v}" data-dec="0" data-pre="${esc(pre)}">${esc(txt)}</span>${unit ? `<small>${unit}</small>` : ''}</p>`;
 }
 
 function waiting(env, mk, path) {
@@ -62,7 +59,7 @@ export function home(env, mk, s, pk = '1m', allEvents = []) {
   const body = `<section class="hero">
 <div class="hl">
 <p class="k">최근 ${label} ${mk === 'us' ? '미국 ' : ''}내부자 순매수, ${dayLabel(w.from)}부터 ${dayLabel(w.to)}까지</p>
-${bigNumber(mk, w)}
+${bigNumber(mk, w, w.net)}
 <p class="sent">${esc(heroSentence(mk, w.net))}${prev}</p>
 ${periodSeg(s, pk, path)}
 </div>
@@ -162,7 +159,7 @@ ${chartSec(c, mk)}`;
   const body = `<section class="hero co"><div class="hl">
 <p class="k">${esc(c.cls)}${c.cls ? ', ' : ''}최근 90일 내부자 장내거래</p>
 <h1 class="coname">${esc(c.co)}</h1>
-<p class="big sm ${sign}">${esc(c.net)}<small>${u}</small></p>
+${bigNumber(mk, c, c.netV, sign)}
 <p class="sent">내부자 ${c.people}명이 ${esc(c.buy)}${u}어치 사고 ${esc(c.sell)}${u}어치 팔아, ${lean}.</p>
 </div></section>
 <div class="facts"><div><p>산 금액</p><b class="up">${esc(c.buy)}<small>${u}</small></b></div><div><p>판 금액</p><b class="dn">${esc(c.sell)}<small>${u}</small></b></div><div><p>거래한 내부자</p><b>${c.people}<small>명</small></b></div><div><p>공시</p><b>${c.count}<small>건</small></b></div></div>
