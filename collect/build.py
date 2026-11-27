@@ -126,7 +126,8 @@ def _avg_px(ev):
 def price_flag(evs):
     """Ids of trade reports whose unit price is implausible: 10x off the median of the same company's
     other reports (needs 2+ others), or (US) $1,000+/share on 100,000+ shares (e.g. a filing that typed
-    the share count into the price box)."""
+    the share count into the price box), or (US) $1,000+/share adding up to $1B+ in one report (e.g. a
+    total typed into the price box: SCHMID $1,731,429 x 60,000, SIMPPLE $162,219 x 62,894)."""
     by_co = collections.defaultdict(list)
     bad = set()
     for e in evs:
@@ -136,6 +137,8 @@ def price_flag(evs):
         if not p:
             continue
         if e["mk"] == "us" and any(px >= 1000 and q >= 100_000 for _, _, q, px in pts):
+            bad.add(e["id"])
+        if e["mk"] == "us" and p >= 1000 and sum(q * px for _, _, q, px in pts) >= 1e9:
             bad.add(e["id"])
         by_co[_key(e)].append((e["id"], p))
     for rows in by_co.values():

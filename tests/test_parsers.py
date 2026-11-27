@@ -164,6 +164,15 @@ def test_price_flag_and_filtered_rank():
     good = ev(8, "GOOD", "Good Inc", "Chief Financial Officer", 2000, 40)
     evs = [lona, *acme, fund, nokey, holder, good]
     assert price_flag(evs) == {"u1", "u4"}
+    # SCHMID 0002125667-26-000005: $1,731,429/share on 60,000 shares (under 100,000) and the company has
+    # only one other report, so neither rule above catches it; same for SIMPPLE's $162,219 sale
+    shmd = [ev(9, "SHMD", "SCHMID Group N.V.", "CFO", 11394, 4.51, day="2026-10-01"),
+            ev(10, "SHMD", "SCHMID Group N.V.", "CFO", 60000, 1731429.0, day="2026-11-25")]
+    sppl = ev(11, "SPPL", "SIMPPLE LTD.", "Acting Chief Executive Officer", 62894, 162219.43)
+    nvr = ev(12, "NVR", "NVR INC", "이사", 300, 7500)  # a real $1,000+ stock, small trade: kept
+    late = ev(13, "LATE", "Late Filer Inc", "이사", 100, 20, day="2026-11-25")
+    late["px"][0][0] = "2023-04-03"  # filed years late but the price is fine: kept
+    assert price_flag(shmd + [sppl, nvr, late]) == {"u10", "u11"}
 
     out = tempfile.mkdtemp()
     site = build_market("us", evs, out, "2026-11-13T18:00")
