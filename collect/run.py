@@ -93,9 +93,34 @@ def resample(data, listing, fetch, log, limit=10):
             log(f"KR: 원문 다시 받기 {no} 없음: {' '.join(why.split())[:100] or '응답 없음'}")
 
 
+def resample_us(data, listing, fetch, log, limit=10):
+    """SEC side of resample(): lines '<accession> <filer CIK>' -> debug/us_<accession>.txt (Form 4 full text)."""
+    if not os.path.exists(listing):
+        return
+    with open(listing, encoding="utf-8") as f:
+        items = re.findall(r"^[ \t]*(\d{10}-\d{2}-\d{6})[ \t]+(\d+)\b", f.read(), re.M)[:limit]
+    for acc, cik in items:
+        out = os.path.join(data, "debug", f"us_{acc}.txt")
+        if os.path.exists(out):
+            continue
+        try:
+            raw = fetch(cik, acc)
+        except Exception as e:  # EDGAR busy: try the rest next run
+            log(f"US: 원문 다시 받기 {acc} 실패, 다음 실행에: {type(e).__name__}")
+            break
+        if not raw:
+            log(f"US: 원문 다시 받기 {acc} 없음 (CIK {cik})")
+            continue
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(raw.decode("utf-8", "replace")[:300000])
+        log(f"US: 원문 다시 받음 {acc}")
+
+
 def prune_debug(data, keep=30):
-    for old in sorted(glob.glob(os.path.join(data, "debug", "*.xml")))[:-keep]:
-        os.remove(old)
+    for pattern in ("kr_*.xml", "us_*.txt"):
+        for old in sorted(glob.glob(os.path.join(data, "debug", pattern)))[:-keep]:
+            os.remove(old)
 
 
 def prune_seen(state, keep_days):
@@ -111,6 +136,9 @@ def main():
 
     kr_state = load_json(os.path.join(DATA, "state", "kr.json"), {})
     kr = Store("kr")
+    if os.environ.get("DART_API_KEY") and not kr_state.get("requeued"):
+        n = dart.requeue_unparsed(kr_state, kr.prune_and_load())
+        log(f"KR: 저장된 못 읽은 보고 {n}건을 원문 다시 읽기 목록에 넣음")
     try:
         debug = dart.collect(kr_state, kr.add, budget * 0.5, log)
     except Exception as e:  # keep what we have and still publish
@@ -128,7 +156,6 @@ def main():
         resample(DATA, os.path.join(os.path.dirname(__file__), "resample.txt"),
                  lambda no: get(dart.API + "document.xml?" + urllib.parse.urlencode(
                      {"crtfc_key": key, "rcept_no": no}), timeout=30, tries=1), log)
-    prune_debug(DATA)
 
     us_state = load_json(os.path.join(DATA, "state", "us.json"), {})
     us = Store("us")
@@ -137,6 +164,12 @@ def main():
     except Exception as e:
         log(f"US: 중단 {type(e).__name__}: {e}")
     us.flush()
+    ua = os.environ.get("SEC_USER_AGENT")
+    if ua:
+        s = sec.Sec(ua)
+        resample_us(DATA, os.path.join(os.path.dirname(__file__), "resample.txt"),
+                    lambda cik, acc: s.get(f"{sec.BASE}/Archives/edgar/data/{cik}/{acc}.txt"), log)
+    prune_debug(DATA)
     prune_seen(us_state, KEEP_DAYS["us"])
     cutoff = (dt.date.today() - dt.timedelta(days=KEEP_DAYS["us"])).isoformat()
     us_state["issuers"] = {k: v for k, v in us_state.get("issuers", {}).items() if v[1] >= cutoff}

@@ -234,9 +234,10 @@ def test_prune_debug_keeps_30():
     os.makedirs(os.path.join(d, "debug"))
     for i in range(32):
         open(os.path.join(d, "debug", f"kr_2026110100{i:04d}.xml"), "w").close()
+        open(os.path.join(d, "debug", f"us_0001-26-{i:06d}.txt"), "w").close()  # SEC originals keep their own 30
     run.prune_debug(d)
     left = sorted(os.listdir(os.path.join(d, "debug")))
-    assert len(left) == 30 and left[0] == "kr_20261101000002.xml"
+    assert len(left) == 60 and left[0] == "kr_20261101000002.xml" and left[30] == "us_0001-26-000002.txt", left
 
 
 def test_audit_data():
@@ -288,6 +289,114 @@ def test_audit_data():
     assert a["runs"] == (3 + 1 + 7 + 5, ["20261120000009"]) and a["runs_detail"] == {
         "fail": 4, "403": 2, "wait_kr": 7, "wait_us": 5}
     assert a["us_odd"] == (3, ["b1", "b2", "c1"]), a["us_odd"]
+
+
+def _run_dart(state, docs, store, calls):
+    """dart.collect against a stand-in OpenDART: no new listings, no elestock rows, document.xml from `docs`."""
+    import json
+    import dart
+
+    def get(url, headers=None, timeout=40, tries=3):
+        name = url.split("/api/")[1].split("?")[0]
+        calls.append(name)
+        if name == "document.xml":  # not in docs: DART 014 (file not published yet)
+            return docs.get(url.split("rcept_no=")[1][:14]) or b"<result><status>014</status></result>"
+        return json.dumps({"status": "013"} if name == "elestock.json" else {"status": "000", "list": []}).encode()
+    old_get, old_key = dart.get, os.environ.get("DART_API_KEY")
+    dart.get, os.environ["DART_API_KEY"] = get, "test"
+    try:
+        dart.collect(state, lambda ev: store.__setitem__(ev["id"], ev), 100, lambda m: None)
+    finally:
+        dart.get = old_get
+        os.environ.pop("DART_API_KEY") if old_key is None else os.environ.__setitem__("DART_API_KEY", old_key)
+
+
+def _zip(text):
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("doc.xml", text)
+    return buf.getvalue()
+
+
+def test_trade_retried_when_document_not_ready():
+    # 20261127000388 삼성전자 etc.: document.xml not out yet on the first read, fine days later (debug/kr_20261126000250.xml)
+    import dart
+    item = {"rcept_no": "20261127000388", "rcept_dt": "20261127", "corp_code": "00126380", "corp_name": "삼성전자",
+            "stock_code": "005930", "corp_cls": "Y", "flr_nm": "김O수", "_k": "trade"}
+    late = dict(item, rcept_no="20261127000411", corp_code="00999999")
+    state = {"backfilled": True, "deep": dart.DEPTH, "seen": {}, "pending": [item, late]}
+    docs, store, calls = {}, {}, []
+    _run_dart(state, docs, store, calls)
+    first, kept = store["20261127000388"], store["20261127000411"]
+    assert first["parsed"] is False and "_noraw" not in first
+    assert sorted(r["rcept_no"] for r in state["retry"]) == ["20261127000388", "20261127000411"]
+    docs["20261127000388"] = _zip(DART_CODED)
+    _run_dart(state, docs, store, calls)
+    ev = store["20261127000388"]
+    assert ev["parsed"] is True and ev["buyQ"] == 3000 and ev["buyAmt"] == 3000 * 12500, ev
+    assert ev["seen"] == first["seen"] and ev["date"] == "2026-11-27"
+    assert [r["rcept_no"] for r in state["retry"]] == ["20261127000411"]
+    for _ in range(dart.RETRY + 3):  # never published: dropped after RETRY more reads
+        _run_dart(state, docs, store, calls)
+    assert state["retry"] == [] and calls.count("document.xml") == 2 + 1 + dart.RETRY
+    assert store["20261127000411"] is kept  # still no document: the stored event is left as it was
+
+
+# debug/kr_20261116000739.xml (NH투자증권, stored parsed=false on 11-16): first 세부변동내역 row, attributes trimmed
+NH_ROW = """<TR ACOPY="Y"><TU AUNIT="RPT_RSN" AUNITVALUE="01">장내매수(+)</TU><TU AUNIT="MDF_DM" AUNITVALUE="20261110">2026.11.10</TU>
+<TU AUNIT="STR_KND" AUNITVALUE="1">보통주</TU><TE ACODE="BFR_STK_CNT">235,192,335</TE><TE ACODE="MDF_STK_CNT">85,000</TE>
+<TE ACODE="AFR_STK_CNT">235,277,335</TE><TE ACODE="ACI_AMT2">22,457</TE><TE ACODE="RMK">-</TE></TR>"""
+
+
+def test_requeue_stored_unparsed_once():
+    # stored before the retry list: 20261116000739 NH투자증권 (no document yet), 20261110000270 (older parser)
+    import dart
+    evs = [{"id": "20261116000739", "mk": "kr", "t": "trade", "date": "2026-11-16", "seen": "2026-11-16T16:23",
+            "code": "005940", "co": "NH투자증권", "corp": "00120182", "cls": "코스피", "who": "농협금융지주", "parsed": False},
+           {"id": "20261110000270", "t": "trade", "date": "2026-11-10", "cls": "코스닥", "parsed": False},
+           {"id": "20261116000740", "t": "trade", "date": "2026-11-16", "parsed": True},
+           {"id": "20261116000741", "t": "major", "date": "2026-11-16"}]
+    state = {"backfilled": True, "deep": dart.DEPTH, "seen": {}, "pending": []}
+    assert dart.requeue_unparsed(state, evs) == 2 and dart.requeue_unparsed(state, evs) == 0  # once only
+    r = state["retry"][0]
+    assert (r["rcept_dt"], r["corp_code"], r["corp_cls"], r["stock_code"]) == ("20261116", "00120182", "Y", "005940")
+    store = {}
+    _run_dart(state, {"20261116000739": _zip(NH_ROW)}, store, [])
+    ev = store["20261116000739"]
+    assert ev["parsed"] and ev["buyQ"] == 85000 and ev["buyAmt"] == 85000 * 22457 and ev["px"] == [["20261110", "b", 85000, 22457]]
+    assert (ev["co"], ev["code"], ev["who"], ev["cls"], ev["seen"]) == ("NH투자증권", "005940", "농협금융지주", "코스피", "2026-11-16T16:23")
+    assert [r["rcept_no"] for r in state["retry"]] == ["20261110000270"]
+
+
+def test_resample_us_saves_form4_once():
+    # SEC originals for 단가 0 / 이상치 reports, e.g. 0001225208-26-008537 LMT (filer CIK 936468)
+    import tempfile
+    import run
+    d = tempfile.mkdtemp()
+    listing = os.path.join(d, "resample.txt")
+    with open(listing, "w", encoding="utf-8") as f:
+        f.write("20261126000250 삼성전자\n0001225208-26-008537 936468 LMT\n0002039852-26-000130 1295401 TBBK\n"
+                "0001749723-26-000141 1124460\n0001437749-26-030422\n0001214659-26-014382 1753672 TWST\n")
+    os.makedirs(os.path.join(d, "debug"))
+    open(os.path.join(d, "debug", "us_0002039852-26-000130.txt"), "w").close()
+    calls, logs = [], []
+
+    def fetch(cik, acc):
+        calls.append((cik, acc))
+        return FORM4.encode() if acc == "0001225208-26-008537" else None  # EDGAR 403 -> None
+    run.resample_us(d, listing, fetch, logs.append)
+    assert [c[0] for c in calls] == ["936468", "1124460", "1753672"], calls
+    with open(os.path.join(d, "debug", "us_0001225208-26-008537.txt"), encoding="utf-8") as f:
+        assert parse_form4(f.read())["buyQ"] == 10000
+    assert not os.path.exists(os.path.join(d, "debug", "us_0001749723-26-000141.txt"))
+    assert any("0001749723-26-000141" in x for x in logs), logs
+
+    def down(cik, acc):
+        raise TimeoutError()
+    run.resample_us(d, listing, down, logs.append)
+    assert sum("실패" in x for x in logs) == 1 and "0001749723-26-000141" in logs[-1], logs  # stops at the first error
 
 
 if __name__ == "__main__":

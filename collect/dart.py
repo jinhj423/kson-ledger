@@ -21,6 +21,7 @@ from common import get, now_kst, to_num
 API = "https://opendart.fss.or.kr/api/"
 LISTED = {"Y": "코스피", "K": "코스닥"}
 DEPTH = 62  # days of history to hold (two '1달' windows of 20 trading days)
+RETRY = 10  # later runs that read a trade report again when its document.xml was not ready yet
 
 
 class RateLimited(Exception):
@@ -226,7 +227,28 @@ def build_trade(d, item, seen_at, debug):
                 for r in b + s if r["qty"] and r["price"]]
     ev["other"] = sorted({r["reason"] for r in rows if r["cat"] == "other"})
     ev["parsed"] = bool(rows)
+    if raw is None:  # not published yet (DART 014) right after filing: collect() reads it again later
+        ev["_noraw"] = True
     return ev
+
+
+def requeue_unparsed(state, events):
+    """Once: stored trade reports that were never read (document not ready, or an older parser) -> retry list."""
+    if state.get("requeued"):
+        return 0
+    state["requeued"] = 1
+    cls = {v: k for k, v in LISTED.items()}
+    retry = state.setdefault("retry", [])
+    have = {r["rcept_no"] for r in retry}
+    n = 0
+    for e in events:
+        if e.get("t") == "trade" and e.get("parsed") is False and e["id"] not in have:
+            retry.append({"rcept_no": e["id"], "rcept_dt": e["date"].replace("-", ""), "corp_code": e.get("corp", ""),
+                          "corp_name": e.get("co", ""), "stock_code": e.get("code", ""),
+                          "corp_cls": cls.get(e.get("cls"), ""), "flr_nm": e.get("who", ""),
+                          "_k": "trade", "_seen": e.get("seen", "")})
+            n += 1
+    return n
 
 
 def build_major(d, item, seen_at):
@@ -265,6 +287,8 @@ def collect(state, store_event, budget_s, log):
     seen = state.setdefault("seen", {})
     pending = state.setdefault("pending", [])
     in_pending = {p["rcept_no"] for p in pending}
+    todo = state.get("retry", [])  # from earlier runs; read once more each run
+    retry = state["retry"] = []  # added this run
     debug = []
     seen_at = now_kst().strftime("%Y-%m-%dT%H:%M")
 
@@ -327,10 +351,36 @@ def collect(state, store_event, budget_s, log):
                 else:
                     seen[item["rcept_no"]] = item["rcept_dt"]
                 continue
+            if ev.pop("_noraw", False):
+                retry.append(dict(item, _seen=seen_at))
             store_event(ev)
             seen[item["rcept_no"]] = item["rcept_dt"]
             done += 1
         log(f"KR: 처리 {done}건, 남은 대기 {len(pending)}건, API {d.calls}회")
+
+        tried = fixed = 0
+        while todo and time.time() - t0 < budget_s:
+            item = todo.pop(0)
+            try:
+                ev = build_trade(d, item, item.get("_seen") or seen_at, debug)
+            except RateLimited:
+                todo.insert(0, item)
+                raise
+            except Exception as e:
+                ev = None
+                log(f"KR: {item['rcept_no']} 실패 (다시 읽기): {e}")
+            tried += 1
+            item["_rt"] = item.get("_rt", 0) + 1
+            if ev is not None and not ev.pop("_noraw", False):  # still no document: keep the stored event
+                store_event(ev)
+                fixed += 1
+                continue
+            if item["_rt"] < RETRY:
+                retry.append(item)
+        if tried:
+            log(f"KR: 원문 다시 읽기 {tried}건 중 {fixed}건 읽음, 다음 실행에 {len(todo) + len(retry)}건")
     except RateLimited:
         log(f"KR: DART 호출 한도 도달, 다음 실행에 이어서 (API {d.calls}회)")
+    finally:
+        state["retry"] = todo + retry
     return debug
