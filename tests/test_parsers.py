@@ -179,6 +179,108 @@ def test_price_flag_and_filtered_rank():
     assert rec["LONA"]["last"][0]["chk"] is True
 
 
+def test_resample_saves_raw_once():
+    import io
+    import tempfile
+    import zipfile
+    import run
+    d = tempfile.mkdtemp()
+    listing = os.path.join(d, "resample.txt")
+    with open(listing, "w", encoding="utf-8") as f:
+        f.write("# 원문을 다시 받을 접수번호\n20261126000250  삼성전자\n20261125000231\n20261124000331\nabc\n20261123000001\n")
+    os.makedirs(os.path.join(d, "debug"))
+    with open(os.path.join(d, "debug", "kr_20261125000231.xml"), "w") as f:
+        f.write("already saved")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("doc.xml", DART_CODED)
+    calls, logs = [], []
+
+    def fetch(no):
+        calls.append(no)
+        if no == "20261126000250":
+            return buf.getvalue()
+        return "<result><status>014</status><message>파일이 존재하지 않습니다</message></result>".encode()
+
+    run.resample(d, listing, fetch, logs.append)
+    assert calls == ["20261126000250", "20261124000331", "20261123000001"], calls
+    with open(os.path.join(d, "debug", "kr_20261126000250.xml"), encoding="utf-8") as f:
+        assert len(parse_trade_rows(f.read())) == 2
+    assert not os.path.exists(os.path.join(d, "debug", "kr_20261124000331.xml"))
+    assert any("20261124000331" in x and "014" in x for x in logs), logs
+    calls.clear()
+
+    def down(no):  # DART unreachable: stop at the first error so the run is not held up
+        calls.append(no)
+        raise TimeoutError()
+
+    run.resample(d, listing, down, logs.append)
+    assert calls == ["20261124000331"], calls
+
+
+def test_prune_debug_keeps_30():
+    import tempfile
+    import run
+    d = tempfile.mkdtemp()
+    os.makedirs(os.path.join(d, "debug"))
+    for i in range(32):
+        open(os.path.join(d, "debug", f"kr_2026110100{i:04d}.xml"), "w").close()
+    run.prune_debug(d)
+    left = sorted(os.listdir(os.path.join(d, "debug")))
+    assert len(left) == 30 and left[0] == "kr_20261101000002.xml"
+
+
+def test_audit_data():
+    import json
+    import tempfile
+    sys.path.insert(0, os.path.dirname(__file__))
+    from audit_data import audit
+    d = tempfile.mkdtemp()
+
+    def put(rel, obj):
+        p = os.path.join(d, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(obj if isinstance(obj, str) else json.dumps(obj))
+
+    def kr(i, **kw):
+        return dict({"id": i, "mk": "kr", "t": "trade", "date": "2026-11-20", "code": "000001", "co": "가람",
+                     "buyQ": 0, "buyAmt": 0, "sellQ": 0, "sellAmt": 0, "parsed": True, "px": []}, **kw)
+
+    def us(i, tk, p, q=100, px=None):
+        return {"id": i, "mk": "us", "t": "trade", "date": "2026-11-20", "tk": tk, "co": tk, "cik": "1",
+                "buyQ": q, "buyAmt": q * p, "sellQ": 0, "sellAmt": 0, "px": [["2026-11-20", "b", q, p]] if px is None else px}
+
+    put("events/kr/2026-11-20.json", [
+        kr("k1", parsed=False), kr("k2", buyQ=100, px=[]),
+        kr("k3", sellQ=10, sellAmt=10, px=[["20261120", "s", 10, 1]]),
+        {k: v for k, v in kr("k4", buyQ=5, buyAmt=0).items() if k != "px"},  # old record: no px field
+        {"id": "m1", "mk": "kr", "t": "major", "date": "2026-11-20"}])
+    put("events/us/2026-11-20.json", [
+        us("a1", "ACME", 10), us("a2", "ACME", 11), us("a3", "ACME", 120),  # a3 flagged (10x off median)
+        us("b1", "BETA", 5), us("b2", "BETA", 80),  # only one other report: not flagged, still odd
+        us("c1", "CORE", 5, q=200, px=[["2026-11-20", "b", 100, 5], ["2026-11-20", "b", 100, 90]]),
+        us("z1", "ZERO", 0, px=[])])
+    put("debug/kr_20261120000001.xml", DART_CODED)
+    put("debug/kr_20261120000002.xml", "<TABLE><TR><TD>무엇</TD></TR></TABLE>")
+    put("runs.log", "\n".join([
+        "[11-18 09:00:00] KR: 20261117000001 실패 (1회): old",
+        "[11-20 08:00:00] KR: 20261120000009 실패 (1회): HTTPError",
+        "[11-20 08:00:01] KR: 처리 3건, 남은 대기 7건, API 9회",
+        "[11-20 08:01:00] US: 읽음 10건, 장내거래 2건, 실패 3건(다음에 다시), 남은 대기 5건, 요청 12회, 403 2회",
+        "[11-20 09:00:00] 끝 (40초)"]))
+    a = audit(d)
+    assert a["kr_trades"] == 4
+    assert a["parsed"] == (1, ["k1"])
+    assert a["zero_kr"] == (1, ["k2"]) and a["old_kr"][0] == 1
+    assert a["zero_us"] == (1, ["z1"])
+    assert a["flag_us"] == (1, ["a3"]) and a["flag_kr"][0] == 0
+    assert a["debug"] == (1, ["20261120000002"])
+    assert a["runs"] == (3 + 1 + 7 + 5, ["20261120000009"]) and a["runs_detail"] == {
+        "fail": 4, "403": 2, "wait_kr": 7, "wait_us": 5}
+    assert a["us_odd"] == (3, ["b1", "b2", "c1"]), a["us_odd"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
