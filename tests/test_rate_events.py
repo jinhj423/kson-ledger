@@ -15,7 +15,7 @@ RSS = """﻿<?xml version="1.0" encoding="utf-8" ?>
 <link>https://www.federalreserve.gov/newsevents/pressreleases/monetary20261118a.htm</link>
 <pubDate>Wed, 18 Nov 2026 19:00:00 GMT</pubDate></item>
 <item><title><![CDATA[Federal Reserve issues FOMC statement]]></title>
-<link>https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm</link>
+<link><![CDATA[https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm]]></link>
 <pubDate>Wed, 28 Oct 2026 18:00:00 GMT</pubDate></item>
 </channel></rss>"""
 

@@ -57,10 +57,10 @@ def parse_fed_rss(xml):
         link = re.search(r"<link>\s*(.*?)\s*</link>", item, re.S)
         if not title or not link:
             continue
-        t = re.sub(r"<!\[CDATA\[|\]\]>", "", title.group(1))
-        m = re.search(r"monetary(\d{4})(\d{2})(\d{2})a\.htm", link.group(1))
+        t, u = (re.sub(r"<!\[CDATA\[|\]\]>", "", g.group(1)).strip() for g in (title, link))
+        m = re.search(r"monetary(\d{4})(\d{2})(\d{2})a\.htm", u)
         if "fomc statement" in t.lower() and m:
-            out.append((f"{m.group(1)}-{m.group(2)}-{m.group(3)}", link.group(1)))
+            out.append((f"{m.group(1)}-{m.group(2)}-{m.group(3)}", u))
     return out
 
 
@@ -199,6 +199,7 @@ def main(argv):
     new = []
     try:
         bis_us = parse_bis_csv(fetch(BIS_CSV.format(area="US", start=start)))
+        print(f"BIS 미국 최신: {max(bis_us) if bis_us else '없음'} {bis_us[max(bis_us)] if bis_us else ''}")
         for day, url in parse_fed_rss(fetch(FED_RSS)):
             if day < (today - dt.timedelta(days=LOOKBACK)).isoformat():
                 continue
@@ -214,6 +215,7 @@ def main(argv):
         if not table:
             raise ValueError("기준금리 표를 못 읽음")
         bis_kr = parse_bis_csv(fetch(BIS_CSV.format(area="KR", start=start)))
+        print(f"BIS 한국 최신: {max(bis_kr) if bis_kr else '없음'} {bis_kr[max(bis_kr)] if bis_kr else ''}")
         evs = bok_events(table, bis_kr, BOK_MEETINGS, today)
         print(f"한은: 확인된 결정 {len(evs)}건 (표 최신 {table[-1][0]} {table[-1][1]}%)")
         new += evs
