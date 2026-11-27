@@ -1,0 +1,48 @@
+name: events
+
+# 금리 결정 이벤트 점(연준 FOMC, 한국은행)을 src/events.json에 자동으로 넣는다.
+# 출처는 각 중앙은행 공식 발표 + BIS 정책금리, 두 곳이 같을 때만. 지수 급변·큰 이슈는 손으로 넣는다.
+on:
+  schedule:
+    - cron: "13 22 * * *" # 07:13 KST (FOMC는 한국 새벽 발표)
+    - cron: "13 8 * * *" # 17:13 KST (금통위는 오전 발표)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["scripts/rate_events.py", ".github/workflows/events.yml"]
+
+concurrency:
+  group: events
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: python3 tests/test_rate_events.py
+
+      - name: Update rate events
+        run: python3 scripts/rate_events.py src/events.json "$RUNNER_TEMP/msg.txt"
+
+      - name: Check and push
+        run: |
+          if git diff --quiet -- src/events.json; then
+            echo "바뀐 것 없음"
+            exit 0
+          fi
+          git diff -- src/events.json
+          node -e "JSON.parse(require('fs').readFileSync('src/events.json','utf8'))"
+          node --test tests/ui.test.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/events.json
+          git commit -F "$RUNNER_TEMP/msg.txt"
+          git pull --rebase origin main
+          git push origin HEAD:main
