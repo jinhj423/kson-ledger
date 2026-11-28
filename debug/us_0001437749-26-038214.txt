@@ -1,0 +1,212 @@
+<SEC-DOCUMENT>0001437749-26-038214.txt : 20261124
+<SEC-HEADER>0001437749-26-038214.hdr.sgml : 20261124
+<ACCEPTANCE-DATETIME>20261124175621
+ACCESSION NUMBER:		0001437749-26-038214
+CONFORMED SUBMISSION TYPE:	4
+PUBLIC DOCUMENT COUNT:		1
+CONFORMED PERIOD OF REPORT:	20261123
+FILED AS OF DATE:		20261124
+DATE AS OF CHANGE:		20261124
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			Heilbron Jack Kendrick
+		CENTRAL INDEX KEY:			0001437208
+		ORGANIZATION NAME:           	
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-34049
+		FILM NUMBER:		261594076
+
+	MAIL ADDRESS:	
+		STREET 1:		16433 BRONCO LANE
+		CITY:			POWAY
+		STATE:			CA
+		ZIP:			92064
+
+ISSUER:		
+
+	COMPANY DATA:	
+		COMPANY CONFORMED NAME:			Presidio Property Trust, Inc.
+		CENTRAL INDEX KEY:			0001080657
+		STANDARD INDUSTRIAL CLASSIFICATION:	REAL ESTATE INVESTMENT TRUSTS [6798]
+		ORGANIZATION NAME:           	05 Real Estate & Construction
+		EIN:				330841255
+		STATE OF INCORPORATION:			MD
+		FISCAL YEAR END:			1231
+
+	BUSINESS ADDRESS:	
+		STREET 1:		4995 MURPHY CANYON ROAD
+		STREET 2:		SUITE 300
+		CITY:			SAN DIEGO
+		STATE:			CA
+		ZIP:			92123
+		BUSINESS PHONE:		760-471-8536
+
+	MAIL ADDRESS:	
+		STREET 1:		4995 MURPHY CANYON ROAD
+		STREET 2:		SUITE 300
+		CITY:			SAN DIEGO
+		STATE:			CA
+		ZIP:			92123
+
+	FORMER COMPANY:	
+		FORMER CONFORMED NAME:	NETREIT, INC.
+		DATE OF NAME CHANGE:	20100903
+
+	FORMER COMPANY:	
+		FORMER CONFORMED NAME:	NETREIT
+		DATE OF NAME CHANGE:	19990225
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>4
+<SEQUENCE>1
+<FILENAME>rdgdoc.xml
+<DESCRIPTION>FORM 4
+<TEXT>
+<XML>
+<?xml version="1.0"?>
+<ownershipDocument>
+
+    <schemaVersion>X0609</schemaVersion>
+
+    <documentType>4</documentType>
+
+    <periodOfReport>2026-11-23</periodOfReport>
+
+    <issuer>
+        <issuerCik>0001080657</issuerCik>
+        <issuerName>Presidio Property Trust, Inc.</issuerName>
+        <issuerTradingSymbol>PPTINC</issuerTradingSymbol>
+        <issuerForeignTradingSymbol></issuerForeignTradingSymbol>
+    </issuer>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001437208</rptOwnerCik>
+            <rptOwnerName>Heilbron Jack Kendrick</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerNonUSAddressFlag>false</rptOwnerNonUSAddressFlag>
+            <rptOwnerStreet1>4995 MURPHY CANYON ROAD</rptOwnerStreet1>
+            <rptOwnerStreet2>SUITE 300</rptOwnerStreet2>
+            <rptOwnerCity>SAN DIEGO</rptOwnerCity>
+            <rptOwnerState>CA</rptOwnerState>
+            <rptOwnerZipCode>92123</rptOwnerZipCode>
+            <rptOwnerStateDescription></rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>1</isDirector>
+            <isOfficer>1</isOfficer>
+            <officerTitle>Chief Executive Officer</officerTitle>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <aff10b5One>0</aff10b5One>
+
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>SQFT</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-11-23</value>
+            </transactionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+            </transactionCoding>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>156</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>0.5601</value>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>126995</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>D</value>
+                </directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>SQFT</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-11-24</value>
+            </transactionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+            </transactionCoding>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>1520</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>0.5601</value>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>128515</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>D</value>
+                </directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeHolding>
+            <securityTitle>
+                <value>SQFT</value>
+            </securityTitle>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>87137</value>
+                    <footnoteId id="F1"/>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>shares held by Puppy Toes, Inc. and its subsidiaries (including Centurion Counsel, Inc.), of which</value>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeHolding>
+    </nonDerivativeTable>
+
+    <footnotes>
+        <footnote id="F1">Includes (i) 86,077 shares held by Puppy Toes, Inc. and its subsidiaries (including Centurion Counsel, Inc.), of which Mr. Heilbron is the controlling shareholder, (ii) 1,000 shares held by Mr. Heilbron's spouse, (iii) 60 shares held by or for the benefit of Mr. Heilbron's grandchildren, (iv) 29,670 shares of unvested stock, (v) and 97,169 shares held directly by Mr. Heilbron.</footnote>
+    </footnotes>
+
+    <ownerSignature>
+        <signatureName>/s/ Jack Heilbron</signatureName>
+        <signatureDate>2026-11-24</signatureDate>
+    </ownerSignature>
+</ownershipDocument>
+</XML>
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>
